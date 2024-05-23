@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from spikingjelly.activation_based import neuron
 
-# 똑같은 TP 인코더, 근데 이제 2차원용으로 차원 확장된
+# 똑같은 TP 인코더, 근데 이제 2차원용으로 차원 확장된 기본버전
 
 
 # 인코딩용 뉴런 정의

@@ -1,0 +1,10 @@
+{
+    "inputPath" : "/data/common/MIT-BIH/mitbih_train.csv",
+    "dim" : 10,
+    "leaky" : false,
+    "threshold" : 1.0,
+    "reset" : false,
+    "reset_value" : 0.0,
+    "adjustment_train" : false,
+    "outputPath" : "/data/leehyunwon/MIT-BIH_TP_encoding/"
+}

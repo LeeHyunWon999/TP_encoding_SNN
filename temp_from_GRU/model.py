@@ -81,6 +81,8 @@ class RNN_GRU(nn.Module):
 
     def forward(self, x):
         # 히든상태와 셀상태 초기화
+
+        
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
 
         # 순전파
