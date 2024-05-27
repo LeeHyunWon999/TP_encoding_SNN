@@ -46,6 +46,7 @@ print("Device :" + device) # 확인용
 # 하이퍼파라미터와 사전 설정값들은 모두 .json 파일에 집어넣도록 한다.
 
 
+
 # 일단은 텐서보드 그대로 사용
 # 텐서보드 선언(인자도 미리 뽑아두기; 나중에 json으로 바꿀 것!)
 # 텐서보드 사용 유무를 json에서 설정하는 경우 눈치껏 조건문으로 비활성화!
@@ -68,21 +69,26 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 얘 안에 단일뉴런 인코딩하는녀석이 들어가는 것.
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
-class SNN_binary(nn.Module):
-    def __init__(self, tau):
+class SNN_MLP(nn.Module):
+    def __init__(self, num_classes, num_encoders):
         super().__init__()
 
-        # SNN TP인코더(인자 수정해야 함!)
-        self.encoders = nn.ModuleList([TP.TP_neuron()])수정수정
+        # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
+        self.encoders = nn.Sequential(
+            # jelly.layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
+            jelly.layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
+            jelly.neuron.IFNode(surrogate_function=jelly.surrogate.ATan()),
+            )
 
         # SNN 리니어
         self.layer = nn.Sequential(
-            jelly.layer.Flatten(),
-            jelly.layer.Linear(187 * 10, 2), # bias는 일단 기본값 True로 두기
-            jelly.neuron.IFNode(tau=tau, surrogate_function=jelly.surrogate.ATan()),
+            # jelly.layer.Flatten(),
+            jelly.layer.Linear(num_encoders, num_classes), # bias는 일단 기본값 True로 두기
+            jelly.neuron.IFNode(surrogate_function=jelly.surrogate.ATan()),
             )
 
     def forward(self, x: torch.Tensor):
+        x = self.encoders(x)
         return self.layer(x)
 
 
@@ -127,6 +133,27 @@ class MITLoader(Dataset):
         label = torch.tensor(label, dtype=torch.long) # 처리 다 된 라벨을 텐서로 변환
 
         return signal, label
+
+
+# 추가 : 기존 데이터셋 이용할거면 기존꺼 써도 되지 않나?
+class MITLoader_MLP(Dataset):
+
+    def __init__(self, csv_file, transforms: None) -> None:
+        super().__init__()
+        self.annotations = pd.read_csv(csv_file).values
+        self.transforms = transforms
+
+    def __len__(self):
+        return self.annotations.shape[0]
+
+    def __getitem__(self, item):
+        signal = self.annotations[item, :-1]
+        label = int(self.annotations[item, -1])
+        # TODO: add augmentations
+        signal = torch.from_numpy(signal).float()
+        signal = self.transforms(signal)
+
+        return signal, torch.tensor(label).long()
 
 
 # test 데이터로 정확도 측정
@@ -192,12 +219,11 @@ def check_accuracy(loader, model):
 
 
 
-# 학습시작!
+########### 학습시작! ############
 
-
-# 일단 raw 데이터셋 가져오기
-train_dataset = MITLoader(original_csv=train_path, encoded_npy=train_encoded_path, transforms=None)
-test_dataset = MITLoader(original_csv=test_path, encoded_npy=test_encoded_path, transforms=None)
+# raw 데이터셋 가져오기
+train_dataset = MITLoader(original_csv=train_path, transforms=None)
+test_dataset = MITLoader(original_csv=test_path, transforms=None)
 
 # 랜덤노이즈, 랜덤쉬프트는 일단 여기에 적어두기만 하고 구현은 미뤄두자.
 
@@ -206,7 +232,7 @@ test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=Tr
 
 
 # SNN 네트워크 초기화
-
+model = 
 
 
 # Loss와 optimizer, scheduler (클래스별 배율 설정 포함)
