@@ -8,6 +8,8 @@ from spikingjelly.activation_based import neuron
 
 # 똑같은 TP 인코더, 근데 이제 2차원용으로 차원 확장된 기본버전
 
+# 입력모듈용으로 리팩토링 필요 : 얘만의 json이 필요한 것이 아니기 때문이며 텐서로 바꾸는 등의 작업이 따로 필요하다.
+
 
 # 인코딩용 뉴런 정의
 class TP_neuron(neuron.BaseNode) : 
@@ -79,35 +81,31 @@ def encode(json_data) :
         print(i,"째 뉴런(g=" + str(neuron_list[i].g) + ") 인코딩 결과 : ", encoded_list[i])
         neuron_list[i].reset()
     
-    
-    # 결과값(텐서) 의 첫 열과 둘째 열에 각각 tau, g 값 추가 : 일단 MIT-BIH 인코딩용이니 번거롭게 하지 말고 걍 제거, g값 자체도 코드로 유추 가능하니 더더욱.
-    # for i in range(len(encoded_list)) : 
-    #     encoded_list[i] = encoded_list[i].tolist()
-    #     encoded_list[i].insert(0, neuron_list[i].g)
-    #     encoded_list[i].insert(0, neuron_list[i].tau)
-        
-    print("인코딩 완료")
+
+
+    ## 저장할 필요 없이 텐서로 반환하기만 하면 된다.  
+    # print("인코딩 완료")
     
     
     
     
-    # 임시 : csv로 저장(각 뉴런들의 결과 값 리스트 합치고 저장)
-    # np.savetxt('./data/output/' + fileName + '_encoded.csv', encoded_list, fmt="%f", delimiter=',') -> 이건 csv로 저장하면 안되는 것 같다. 내껀 3차원이니깐..
+    # # 임시 : csv로 저장(각 뉴런들의 결과 값 리스트 합치고 저장)
+    # # np.savetxt('./data/output/' + fileName + '_encoded.csv', encoded_list, fmt="%f", delimiter=',') -> 이건 csv로 저장하면 안되는 것 같다. 내껀 3차원이니깐..
     
-    # npy 형태로 통일
-    encoded_array = np.array(encoded_list)
-    # 출력데이터 또한 그 순서를 좀 바꾸도록 하자. 지금은 (뉴런, T, 데이터갯수) 인데, 이걸 (데이터갯수, 뉴런, T) 이걸로 바꿔야겠다.
-    encoded_array = encoded_array.transpose(2, 0, 1)
+    # # npy 형태로 통일
+    # encoded_array = np.array(encoded_list)
+    # # 출력데이터 또한 그 순서를 좀 바꾸도록 하자. 지금은 (뉴런, T, 데이터갯수) 인데, 이걸 (데이터갯수, 뉴런, T) 이걸로 바꿔야겠다.
+    # encoded_array = encoded_array.transpose(2, 0, 1)
     
-    # 잘 되는지 출력필요
-    print(encoded_array)
+    # # 잘 되는지 출력필요
+    # print(encoded_array)
     
-    # npy로 저장
-    np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_encoded.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
+    # # npy로 저장
+    # np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_encoded.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
 
 
 
-    print("저장 완료")
+    # print("저장 완료")
 
 
 
