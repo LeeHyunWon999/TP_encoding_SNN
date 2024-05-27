@@ -71,7 +71,7 @@ test_path = json_data['test_path']
 # 텐서보드 선언(인자도 미리 뽑아두기; 나중에 json으로 바꿀 것!)
 # 텐서보드 사용 유무를 json에서 설정하는 경우 눈치껏 조건문으로 비활성화!
 board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1로 두진 않겠지?
-writer = SummaryWriter(log_dir="./tensorboard/"+"GRU_binary" + board_class + "_encoders" + str(num_encoders) + "_early" + str(early_stop) + "_lr" + str(learning_rate))
+writer = SummaryWriter(log_dir="./tensorboard/"+"SNN_MLP" + board_class + "_encoders" + str(num_encoders) + "_early" + str(early_stop) + "_lr" + str(learning_rate))
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -242,8 +242,8 @@ def check_accuracy(loader, model):
 ########### 학습시작! ############
 
 # raw 데이터셋 가져오기
-train_dataset = MITLoader(original_csv=train_path, transforms=None)
-test_dataset = MITLoader(original_csv=test_path, transforms=None)
+train_dataset = MITLoader_MLP(csv_file=train_path)
+test_dataset = MITLoader_MLP(csv_file=test_path)
 
 # 랜덤노이즈, 랜덤쉬프트는 일단 여기에 적어두기만 하고 구현은 미뤄두자.
 
@@ -348,5 +348,5 @@ for epoch in range(num_epochs):
 print("training finished; epoch :" + str(final_epoch))
 
 
-# 마지막엔 텐서보드 닫기(기록유무도 json에 적는 경우 눈치껏 비활성화)
+# 마지막엔 텐서보드 닫기
 writer.close()
