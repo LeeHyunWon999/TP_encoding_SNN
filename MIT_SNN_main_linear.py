@@ -45,13 +45,33 @@ print("Device :" + device) # 확인용
 
 # 하이퍼파라미터와 사전 설정값들은 모두 .json 파일에 집어넣도록 한다.
 
+# json 읽어다가 반환(파일경로 없으면 에러띄우기)
+def loadJson() : 
+    if (len(sys.argv) != 2) : 
+        print("config.json 파일 경로가 없거나 그 이상의 인자가 들어갔습니다!", len(sys.argv))
+        exit()
+    else : 
+        with open(sys.argv[1], 'r') as f:
+            print("config.json파일 읽기 성공!")
+            return json.load(f)
+        
+# 파일 읽어들이고 변수들 할당하기
+json_data = loadJson()
+num_classes = json_data['num_classes']
+num_encoders = json_data['num_encoders']
+early_stop = json_data['early_stop']
+learning_rate = json_data['init_lr']
+batch_size = json_data['batch_size']
+num_epochs = json_data['num_epochs']
+train_path = json_data['train_path']
+test_path = json_data['test_path']
 
 
 # 일단은 텐서보드 그대로 사용
 # 텐서보드 선언(인자도 미리 뽑아두기; 나중에 json으로 바꿀 것!)
 # 텐서보드 사용 유무를 json에서 설정하는 경우 눈치껏 조건문으로 비활성화!
 board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1로 두진 않겠지?
-writer = SummaryWriter(log_dir="./tensorboard/"+"GRU_binary" + board_class + "_input" + str(input_size) + "_early" + str(early_stop) + "_lr" + str(learning_rate))
+writer = SummaryWriter(log_dir="./tensorboard/"+"GRU_binary" + board_class + "_encoders" + str(num_encoders) + "_early" + str(early_stop) + "_lr" + str(learning_rate))
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)

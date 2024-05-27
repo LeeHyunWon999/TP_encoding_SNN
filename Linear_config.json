@@ -3,5 +3,8 @@
     "num_encoders" : 10,
     "early_stop" : 25,
     "init_lr" : 0.0001,
-    
+    "batch_size" : 64,
+    "num_epochs" : 150,
+    "train_path" : "/data/common/MIT-BIH/mitbih_train.csv",
+    "test_path" : "/data/common/MIT-BIH/mitbih_test.csv"
 }
