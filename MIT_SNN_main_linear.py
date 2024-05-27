@@ -29,8 +29,8 @@ import numpy as np
 import spikingjelly.activation_based as jelly
 # from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
-# 이번엔 인코더도 올려둔다.
-from temp_from_GRU import TP_encoder_MIT as TP
+# 이쪽에선 SNN 모델을 넣지 않고, 바로 jelly.layer.Linear로 바로 들어가는 것을 시도해본다. 이쪽이 오히려 학습 가능한 파라미터화 시키는 것이 아닐까? 아닌가? 해 봐야 안다.
+# from temp_from_GRU import TP_encoder_MIT as TP
 
 
 # import torchmetrics.functional as TF # 이걸로 메트릭 한번에 간편하게 할 수 있다던데?
