@@ -252,7 +252,7 @@ test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=Tr
 
 
 # SNN 네트워크 초기화
-model = 
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes)
 
 
 # Loss와 optimizer, scheduler (클래스별 배율 설정 포함)
