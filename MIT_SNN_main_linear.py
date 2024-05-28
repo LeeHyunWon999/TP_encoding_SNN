@@ -159,7 +159,7 @@ class MITLoader(Dataset):
 
 
 # 추가 : 기존 데이터셋 이용할거면 기존꺼 써도 되지 않나?
-class MITLoader_MLP(Dataset):
+class MITLoader_MLP_binary(Dataset):
 
     def __init__(self, csv_file, transforms: Callable = lambda x: x) -> None:
         super().__init__()
@@ -171,10 +171,13 @@ class MITLoader_MLP(Dataset):
 
     def __getitem__(self, item):
         signal = self.annotations[item, :-1]
-        label = int(self.annotations[item, -1])
-        # TODO: add augmentations
         signal = torch.from_numpy(signal).float()
-        signal = self.transforms(signal)
+        if self.transforms : 
+            signal = self.transforms(signal)
+        
+        label = int(self.annotations[item, -1])
+        if label > 0:
+            label = 1  # 1 이상인 모든 값은 1로 변환(난 이진값 처리하니깐)
 
         return signal, torch.tensor(label).long()
 
@@ -193,6 +196,8 @@ def check_accuracy(loader, model):
 
     # 모델 평가용으로 전환
     model.eval()
+    
+    print("validation 진행중...")
 
     with  torch.no_grad():
         for x, y in loader:
@@ -201,21 +206,44 @@ def check_accuracy(loader, model):
 
 
             # 이부분도 train때랑 동일하게 수정필요 : timestep만큼 반복해야 하고, loss도 mse로 바꾸는 등의 작업이 필요하다.
-            scores = model(x)
-            loss = criterion(scores, y) # loss값 직접 따오기 위해 여기서도 loss값 추려내기
-            total_loss += loss.item() # loss값 따오기
+            # scores = model(x)
+            # loss = criterion(scores, y) # loss값 직접 따오기 위해 여기서도 loss값 추려내기
+            # total_loss += loss.item() # loss값 따오기
+            
+            # 순전파 : SNN용으로 바꿔야 함
+            timestep = x.shape[1] # SNN은 타임스텝이 필요함
+            
+            out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
+            # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
+            for t in range(timestep) : 
+                timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+                out_fr += model(timestep_data) # 1회 순전파
+                # out_fr_list.append(model(timestep_data))  # 각 타임스텝의 출력을 리스트에 저장
+            
+                # 이건 GPT가 제안한 것, 근데 이제 MSE loss를 쓸 것이므로 일단 이건 배제?
+                # if t == 0:  # 첫 timestep에 loss 초기화
+                #     loss = criterion(output, targets)
+                # else:  # 이후 timestep에는 loss 축적
+                #     loss += criterion(output, targets)
+        
+        
+            out_fr = out_fr / timestep
+            # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
             
 
             # 여기도 메트릭 update해야 compute 가능함
             # 여기도 마찬가지로 크로스엔트로피 드가는거 생각해서 1차원으로 변경 필요함
-            preds = torch.argmax(scores, dim=1)
+            preds = torch.argmax(out_fr, dim=1)
             accuracy.update(preds, y)
             f1_micro.update(preds, y)
             f1_weighted.update(preds, y)
             auroc_macro.update(preds, y)
             auroc_weighted.update(preds, y)
-            probabilities = F.softmax(scores, dim=1)[:, 1]  # 클래스 "1"의 확률 추출
+            probabilities = F.softmax(out_fr, dim=1)[:, 1]  # 클래스 "1"의 확률 추출
             auprc.update(probabilities, y)
+            
+            # 얘도 SNN 모델이니 초기화 필요
+            functional.reset_net(model)
 
     # 각종 평가수치들 만들고 tensorboard에 기록
     valid_loss = total_loss / len(loader)
@@ -248,8 +276,8 @@ def check_accuracy(loader, model):
 ########### 학습시작! ############
 
 # raw 데이터셋 가져오기
-train_dataset = MITLoader_MLP(csv_file=train_path)
-test_dataset = MITLoader_MLP(csv_file=test_path)
+train_dataset = MITLoader_MLP_binary(csv_file=train_path)
+test_dataset = MITLoader_MLP_binary(csv_file=test_path)
 
 # 랜덤노이즈, 랜덤쉬프트는 일단 여기에 적어두기만 하고 구현은 미뤄두자.
 
@@ -267,7 +295,8 @@ criterion = nn.CrossEntropyLoss(weight=pos_weight)
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=50, eta_min=0.00001)
 
-
+# inplace 오류해결을 위해 이상위치 찾기
+torch.autograd.set_detect_anomaly(True)
 
 # 모델 학습 시작(학습추이 확인해야 하니 훈련, 평가 모두 Acc, F1, AUROC, AUPRC 넣을 것!)
 # GRU가 아니기 때문에 해당하는 부분은 바꿔둬야 할 것으로 보임..
@@ -287,30 +316,60 @@ for epoch in range(num_epochs):
         # 데이터 cuda에 갖다박기
         data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
         targets = targets.to(device=device)
+        
+        
+        # print(f"Batch {batch_idx}, targets: {targets}") # 라벨 잘 들어갔는지 확인용
+        label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
+        # print("onehot :", label_onehot) # 원핫도 잘나옴
 
         # 순전파
-        scores = model(data)
-        loss = criterion(scores, targets)
-
-        total_loss += loss.item() # loss값 따오기
+        # scores = model(data)
+        # loss = criterion(scores, targets)
+        # total_loss += loss.item() # loss값 따오기
+        
+        
+        # 순전파 : SNN용으로 바꿔야 함
+        timestep = data.shape[1] # SNN은 타임스텝이 필요함
+        out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
+        # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
+        for t in range(3) :  # 원래 timestep 들어가야함
+            timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+            out_fr += model(timestep_data) # 1회 순전파
+            # out_fr_list.append(model(timestep_data))  # 각 타임스텝의 출력을 리스트에 저장
+            
+            # 이건 GPT가 제안한 것, 근데 이제 MSE loss를 쓸 것이므로 일단 이건 배제?
+            # if t == 0:  # 첫 timestep에 loss 초기화
+            #     loss = criterion(output, targets)
+            # else:  # 이후 timestep에는 loss 축적
+            #     loss += criterion(output, targets)
+        
+        
+        out_fr = out_fr / timestep
+        # print(out_fr) # 출력 firing rate, 잘 나오는 것으로 보임
+        # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
+        loss = F.mse_loss(out_fr, label_onehot)
+        print(loss) # loss는 잘 나오는가? -> 아니 이거 MSE 써서 안좋아진건가?? 뭐지?
 
         # 역전파
         optimizer.zero_grad()
-        loss.backward()
+        loss.backward(retain_graph=True)
 
         # 아담 옵티머스 프라임 출격
         optimizer.step()
 
-        # 배치마다 각 메트릭을 업데이트한 뒤에 compute해야 한댄다
-        # 근데 이제 scores는 크로스엔트로피로, 원시 클래스 확률 로짓이 그대로 있으므로 argmax를 시켜서 값 하나를 뽑아야 한다.
-        preds = torch.argmax(scores, dim=1)
+        # 평가지표는 전체 클래스의 발화빈도인 out_fr을 적절히 이용해서 만들기
+        preds = torch.argmax(out_fr, dim=1)
+        # print(preds) # 한 배치 안의 모델 예측값, 잘 나오는 것으로 보임
         accuracy.update(preds, targets)
         f1_micro.update(preds, targets)
         f1_weighted.update(preds, targets)
         auroc_macro.update(preds, targets)
         auroc_weighted.update(preds, targets)
-        probabilities = F.softmax(scores, dim=1)[:, 1]  # 클래스 "1"의 확률 추출
+        probabilities = F.softmax(out_fr, dim=1)[:, 1]  # 클래스 "1"의 확률 추출
         auprc.update(probabilities, targets)
+        
+        # SNN : 모델 초기화
+        functional.reset_net(model)
 
 
     # 스케줄러는 에포크 단위로 진행
