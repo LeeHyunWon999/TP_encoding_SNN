@@ -210,6 +210,8 @@ def check_accuracy(loader, model):
             # loss = criterion(scores, y) # loss값 직접 따오기 위해 여기서도 loss값 추려내기
             # total_loss += loss.item() # loss값 따오기
             
+            label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
+            
             # 순전파 : SNN용으로 바꿔야 함
             timestep = x.shape[1] # SNN은 타임스텝이 필요함
             
@@ -230,6 +232,10 @@ def check_accuracy(loader, model):
             out_fr = out_fr / timestep
             # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
             
+            loss = F.mse_loss(out_fr, label_onehot)
+            
+            # 여기에도 total loss 찍기
+            total_loss += loss.item()
 
             # 여기도 메트릭 update해야 compute 가능함
             # 여기도 마찬가지로 크로스엔트로피 드가는거 생각해서 1차원으로 변경 필요함
@@ -332,7 +338,7 @@ for epoch in range(num_epochs):
         timestep = data.shape[1] # SNN은 타임스텝이 필요함
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
         # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
-        for t in range(3) :  # 원래 timestep 들어가야함
+        for t in range(30) :  # 원래 timestep 들어가야함
             timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
             out_fr += model(timestep_data) # 1회 순전파
             # out_fr_list.append(model(timestep_data))  # 각 타임스텝의 출력을 리스트에 저장
@@ -348,7 +354,11 @@ for epoch in range(num_epochs):
         # print(out_fr) # 출력 firing rate, 잘 나오는 것으로 보임
         # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
         loss = F.mse_loss(out_fr, label_onehot)
-        print(loss) # loss는 잘 나오는가? -> 아니 이거 MSE 써서 안좋아진건가?? 뭐지?
+        # print(loss) # loss는 잘 나오는가? -> 아니 이거 MSE 써서 안좋아진건가?? 뭐지?
+
+
+        # 얘도 일단 total_loss를 찍어봐야..겠지?
+        total_loss += loss.item()
 
         # 역전파
         optimizer.zero_grad()
@@ -357,6 +367,8 @@ for epoch in range(num_epochs):
         # 아담 옵티머스 프라임 출격
         optimizer.step()
 
+
+        
         # 평가지표는 전체 클래스의 발화빈도인 out_fr을 적절히 이용해서 만들기
         preds = torch.argmax(out_fr, dim=1)
         # print(preds) # 한 배치 안의 모델 예측값, 잘 나오는 것으로 보임
