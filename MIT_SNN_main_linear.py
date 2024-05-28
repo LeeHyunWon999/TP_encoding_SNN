@@ -199,9 +199,12 @@ def check_accuracy(loader, model):
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
 
+
+            # 이부분도 train때랑 동일하게 수정필요 : timestep만큼 반복해야 하고, loss도 mse로 바꾸는 등의 작업이 필요하다.
             scores = model(x)
             loss = criterion(scores, y) # loss값 직접 따오기 위해 여기서도 loss값 추려내기
             total_loss += loss.item() # loss값 따오기
+            
 
             # 여기도 메트릭 update해야 compute 가능함
             # 여기도 마찬가지로 크로스엔트로피 드가는거 생각해서 1차원으로 변경 필요함
@@ -342,7 +345,7 @@ for epoch in range(num_epochs):
         if earlystop_counter == 0 : 
             final_epoch = epoch
             break # train epoch를 빠져나옴
-    
+
     
 
 
