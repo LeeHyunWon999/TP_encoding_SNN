@@ -242,8 +242,8 @@ def check_accuracy(loader, model):
 ########### 학습시작! ############
 
 # raw 데이터셋 가져오기
-train_dataset = MITLoader_MLP(csv_file=train_path)
-test_dataset = MITLoader_MLP(csv_file=test_path)
+train_dataset = MITLoader_MLP(csv_file=train_path, transforms = None)
+test_dataset = MITLoader_MLP(csv_file=test_path, transforms = None)
 
 # 랜덤노이즈, 랜덤쉬프트는 일단 여기에 적어두기만 하고 구현은 미뤄두자.
 
