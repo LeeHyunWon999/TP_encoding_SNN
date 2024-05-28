@@ -17,6 +17,7 @@ from torch import nn  # 모든 DNN 모델들
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
+from typing import Callable # 람다식
 from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
@@ -26,8 +27,8 @@ import json
 import numpy as np
 
 # 얘는 SNN 학습이니까 당연히 있어야겠지? 특히 SNN 모델을 따로 만드려는 경우엔 뉴런 말고도 넣을 것이 많다.
-import spikingjelly.activation_based as jelly
-# from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
+# import spikingjelly.activation_based as jelly
+from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
 # 이쪽에선 SNN 모델을 넣지 않고, 바로 jelly.layer.Linear로 바로 들어가는 것을 시도해본다. 이쪽이 오히려 학습 가능한 파라미터화 시키는 것이 아닐까? 아닌가? 해 봐야 안다.
 # from temp_from_GRU import TP_encoder_MIT as TP
@@ -95,17 +96,19 @@ class SNN_MLP(nn.Module):
 
         # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
         self.encoders = nn.Sequential(
-            # jelly.layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
-            jelly.layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
-            jelly.neuron.IFNode(surrogate_function=jelly.surrogate.ATan()),
+            # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
+            layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan()),
             )
 
         # SNN 리니어
         self.layer = nn.Sequential(
-            # jelly.layer.Flatten(),
-            jelly.layer.Linear(num_encoders, num_classes), # bias는 일단 기본값 True로 두기
-            jelly.neuron.IFNode(surrogate_function=jelly.surrogate.ATan()),
+            # layer.Flatten(),
+            layer.Linear(num_encoders, num_classes), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan()),
             )
+        
+        # 이러면 파라미터가 너무 적어지는 것 같지만, 일단 돌려서 결과를 뽑을 수 있게 해둔 뒤에 결과가 안좋으면 파라미터를 늘리도록 하자.
 
     def forward(self, x: torch.Tensor):
         x = self.encoders(x)
@@ -158,7 +161,7 @@ class MITLoader(Dataset):
 # 추가 : 기존 데이터셋 이용할거면 기존꺼 써도 되지 않나?
 class MITLoader_MLP(Dataset):
 
-    def __init__(self, csv_file, transforms: None) -> None:
+    def __init__(self, csv_file, transforms: Callable = lambda x: x) -> None:
         super().__init__()
         self.annotations = pd.read_csv(csv_file).values
         self.transforms = transforms
@@ -242,8 +245,8 @@ def check_accuracy(loader, model):
 ########### 학습시작! ############
 
 # raw 데이터셋 가져오기
-train_dataset = MITLoader_MLP(csv_file=train_path, transforms = None)
-test_dataset = MITLoader_MLP(csv_file=test_path, transforms = None)
+train_dataset = MITLoader_MLP(csv_file=train_path)
+test_dataset = MITLoader_MLP(csv_file=test_path)
 
 # 랜덤노이즈, 랜덤쉬프트는 일단 여기에 적어두기만 하고 구현은 미뤄두자.
 
@@ -252,7 +255,7 @@ test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=Tr
 
 
 # SNN 네트워크 초기화
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes).to(device=device)
 
 
 # Loss와 optimizer, scheduler (클래스별 배율 설정 포함)
