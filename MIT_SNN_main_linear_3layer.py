@@ -67,6 +67,7 @@ num_epochs = json_data['num_epochs']
 train_path = json_data['train_path']
 test_path = json_data['test_path']
 class_weight = json_data['class_weight']
+hidden_size = json_data['hidden_size']
 
 
 # 일단은 텐서보드 그대로 사용
@@ -92,7 +93,7 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 얘 안에 단일뉴런 인코딩하는녀석이 들어가는 것.
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders):
+    def __init__(self, num_classes, num_encoders, hidden_size):
         super().__init__()
 
         # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
@@ -101,11 +102,18 @@ class SNN_MLP(nn.Module):
             layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan()),
             )
-
-        # SNN 리니어
+        
+        # SNN 리니어 : 인코더 입력 -> 히든
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(num_encoders, num_classes), # bias는 일단 기본값 True로 두기
+            layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan()),
+            )
+
+        # SNN 리니어 : 히든 -> 출력
+        self.layer = nn.Sequential(
+            # layer.Flatten(),
+            layer.Linear(hidden_size, num_classes), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan()),
             )
         
@@ -299,7 +307,7 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes).to(device=device)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size).to(device=device)
 
 
 # Loss와 optimizer, scheduler (클래스별 배율 설정 포함)
