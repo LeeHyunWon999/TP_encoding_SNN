@@ -38,7 +38,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 일단 원석이가 0, 1번 쓰고 있다 하니 2번으로 지정
+os.environ["CUDA_VISIBLE_DEVICES"]= "1"  # 일단 원석이가 0, 1번 쓰고 있다 하니 2번으로 지정
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -74,7 +74,7 @@ hidden_size = json_data['hidden_size']
 # 텐서보드 선언(인자도 미리 뽑아두기; 나중에 json으로 바꿀 것!)
 # 텐서보드 사용 유무를 json에서 설정하는 경우 눈치껏 조건문으로 비활성화!
 board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1로 두진 않겠지?
-writer = SummaryWriter(log_dir="./tensorboard/"+"SNN_MLP" + board_class + "_encoders" + str(num_encoders) + "_early" + str(early_stop) + "_lr" + str(learning_rate))
+writer = SummaryWriter(log_dir="./tensorboard/"+"SNN_MLP_3layer_" + board_class + "_encoders" + str(num_encoders) + "_early" + str(early_stop) + "_lr" + str(learning_rate))
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -104,7 +104,7 @@ class SNN_MLP(nn.Module):
             )
         
         # SNN 리니어 : 인코더 입력 -> 히든
-        self.layer = nn.Sequential(
+        self.hidden = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan()),
@@ -121,6 +121,7 @@ class SNN_MLP(nn.Module):
 
     def forward(self, x: torch.Tensor):
         x = self.encoders(x)
+        x = self.hidden(x)
         return self.layer(x)
 
 
