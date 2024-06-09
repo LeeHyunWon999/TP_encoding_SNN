@@ -17,6 +17,7 @@ from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
 from typing import Callable # 람다식
 # from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
+import matplotlib.pyplot as plt # 여기서도 인코딩 잘 되는지 플롯 찍어봐야 핢...
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
@@ -131,51 +132,54 @@ class MITLoader_MLP_binary(Dataset):
 # test 데이터로 정확도 측정 : 여기선 값 설정과 함께 1번의 순전파만 해서 신호가 잘 나오는지를 봐야 한다.
 def check_accuracy(loader, model):
 
-    # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
-    total_loss = 0
-
     # 모델 평가용으로 전환
     model.eval()
     
     print("validation 진행중...")
+    
+    input_list = [] # 현재 입력값(데이터)도 집어넣기?
+    output_list = [] # 리스트에 저장
 
     with  torch.no_grad():
         for x, y in loader:
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
             
-            label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
-            
             # 순전파 : SNN용으로 바꿔야 함
             timestep = x.shape[1] # SNN은 타임스텝이 필요함
             
-            out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-            # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
+            input_list = x.cpu().numpy().tolist()
+            
             for t in range(timestep) : 
-                timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
-                out_fr += model(timestep_data) # 1회 순전파
+                timestep_data = x[:, t].unsqueeze(1).to(device)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+                
+                print(f"Timestep {t}, input size: {timestep_data.size()}")
+                
+                output = model(timestep_data)  # 1회 순전파
+                output_list.append(output.cpu().numpy().tolist())  # CPU로 변환 후 리스트에 저장
+                
+            
         
-        
-            out_fr = out_fr / timestep
-            # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
-            
-            loss = F.mse_loss(out_fr, label_onehot, reduction='none')
-
-            weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
-            final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
-            
-            # 여기에도 total loss 찍기
-            total_loss += final_loss.item()
-            
             # 얘도 SNN 모델이니 초기화 필요
             functional.reset_net(model)
+            
+            # test 데이터 전부 돌릴 필욘 없어보이고, 잘 나오는지 1회만 해보자.
+            break
 
 
 
     # 모델 다시 훈련으로 전환
     model.train()
 
-
+    print(output_list) # 출력
+    print(input_list)
+    print(np.shape(output_list))
+    print(np.shape(input_list))
+    
+    # 이제 이 정보를 plot으로 찍으면 된다.
+    signals = np.array(output_list)  # (187, 1, 10) 크기로 가정
+    signals = signals.squeeze()  # (187, 10)로 차원 축소
+    signals = signals.T  # (10, 187)로 트랜스포즈
 
 
 
@@ -198,6 +202,12 @@ class_weight = torch.tensor(class_weight, device=device)
 # SNN 네트워크 초기화
 model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes).to(device=device)
 
+# 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
+manual_weights = torch.linspace(0.5,1.5,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
+model.encoders[0].weight = nn.Parameter(manual_weights)
+model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
+
+
 
 # Loss와 optimizer, scheduler (클래스별 배율 설정 포함)
 pos_weight = torch.tensor([0.2, 0.8]).to(device)
@@ -208,81 +218,9 @@ scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=50, eta_min=0.00001)
 # inplace 오류해결을 위해 이상위치 찾기
 torch.autograd.set_detect_anomaly(True)
 
-# 모델 학습 시작(학습추이 확인해야 하니 훈련, 평가 모두 Acc, F1, AUROC, AUPRC 넣을 것!)
-# GRU가 아니기 때문에 해당하는 부분은 바꿔둬야 할 것으로 보임..
-# # 이거 다 째도 될듯?
-# for epoch in range(num_epochs):
-#     # 에폭마다 각종 메트릭들 리셋
-#     total_loss = 0
+print("Weight size:", model.encoders[0].weight.size())  # 이것은 [10, 1]이어야 합니다.
+print("Bias size:", model.encoders[0].bias.size())  # 이것은 [10]이어야 합니다.
 
-
-#     # 배치단위 실행
-#     for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
-#         # 데이터 cuda에 갖다박기
-#         data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
-#         targets = targets.to(device=device)
-        
-        
-#         # print(f"Batch {batch_idx}, targets: {targets}") # 라벨 잘 들어갔는지 확인용
-#         label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
-#         # print("onehot :", label_onehot) # 원핫도 잘나옴
-
-#         # 순전파
-#         # scores = model(data)
-#         # loss = criterion(scores, targets)
-#         # total_loss += loss.item() # loss값 따오기
-        
-        
-#         # 순전파 : SNN용으로 바꿔야 함
-#         timestep = data.shape[1] # SNN은 타임스텝이 필요함
-#         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-#         for t in range(timestep) :  # 원래 timestep 들어가야함
-#             timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
-#             out_fr += model(timestep_data) # 1회 순전파
-        
-        
-#         out_fr = out_fr / timestep
-#         loss = F.mse_loss(out_fr, label_onehot, reduction='none') # 요소별로 loss를 구해야 해서 reduction을 넣는다는데..
-#         weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하고 배치 차원 확장
-#         final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
-
-
-#         # 얘도 일단 total_loss를 찍어봐야..겠지?
-#         total_loss += final_loss.item()
-
-#         # 역전파
-#         optimizer.zero_grad()
-#         final_loss.backward(retain_graph=True)
-
-#         # 아담 옵티머스 프라임 출격
-#         optimizer.step()
-
-        
-#         # SNN : 모델 초기화
-#         functional.reset_net(model)
-
-
-#     # 스케줄러는 에포크 단위로 진행
-#     scheduler.step()
-
-#     # 한 에포크 진행 다 됐으면 training 지표 tensorboard에 찍고 valid 돌리기
-#     train_loss = total_loss / len(train_loader)
-
-
-#     valid_loss = check_accuracy(test_loader, model) # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
-
-#     print('epoch ' + str(epoch) + ', valid loss : ' + str(valid_loss))
-
-#     if valid_loss < min_valid_loss : 
-#         min_valid_loss = valid_loss
-#         earlystop_counter = early_stop
-#     else : 
-#         earlystop_counter -= 1
-#         if earlystop_counter == 0 : 
-#             final_epoch = epoch
-#             break # train epoch를 빠져나옴
-
-    
 
 check_accuracy(test_loader, model)
 
