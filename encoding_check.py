@@ -18,6 +18,7 @@ import torchmetrics # 평가지표 로깅용
 from typing import Callable # 람다식
 # from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 import matplotlib.pyplot as plt # 여기서도 인코딩 잘 되는지 플롯 찍어봐야 핢...
+from matplotlib.gridspec import GridSpec # 이건 복잡한 플롯 찍기용이라는데..?
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
@@ -92,7 +93,7 @@ class SNN_MLP(nn.Module):
         self.encoders = nn.Sequential(
             # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
             layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan()),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
 
         # SNN 리니어 : 인코더 정상동작 확인용이니 여기선 안쓴다.
@@ -177,11 +178,34 @@ def check_accuracy(loader, model):
     print(np.shape(input_list))
     
     # 이제 이 정보를 plot으로 찍으면 된다.
+    input_list = np.array(input_list).squeeze() # (1,187) 을 (187,)로 차원 축소
     signals = np.array(output_list)  # (187, 1, 10) 크기로 가정
     signals = signals.squeeze()  # (187, 10)로 차원 축소
-    signals = signals.T  # (10, 187)로 트랜스포즈
 
+    
+    
+    # GridSpec을 사용한 복잡한 레이아웃 설정
+    fig = plt.figure(figsize=(40, 20))
+    gs = GridSpec(10, 2, figure=fig)
 
+    # 좌측에 원본 신호 플롯
+    ax0 = fig.add_subplot(gs[:, 0])  # 첫 번째 열 전체를 차지
+    ax0.plot(range(187), input_list, color='r')
+    ax0.set_title("Original Input Signal")
+    ax0.set_xlabel("Timestep")
+    ax0.set_ylabel("Amplitude")
+
+    # 우측에 10개의 인코딩된 신호 플롯
+    for i in range(10):
+        ax = fig.add_subplot(gs[i, 1])  # 두 번째 열, 각 행
+        ax.bar(range(187), signals[:, i], color='b')
+        ax.set_title(f'Encoder {i+1} Output')
+        ax.set_xlabel('Timestep')
+        ax.set_ylabel('Output')
+        ax.set_ylim(0, 1.5)  # y축의 범위 조절
+
+    plt.tight_layout()
+    plt.savefig('encoding_result.png')  # 플롯 저장
 
 
 ########### 학습시작! ############
@@ -203,7 +227,7 @@ class_weight = torch.tensor(class_weight, device=device)
 model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes).to(device=device)
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
-manual_weights = torch.linspace(0.5,1.5,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
+manual_weights = torch.linspace(0.2,2.0,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
 model.encoders[0].weight = nn.Parameter(manual_weights)
 model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
 
