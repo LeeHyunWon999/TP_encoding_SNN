@@ -19,6 +19,7 @@ from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
 from typing import Callable # 람다식
 from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
+import time # 텐서보드 폴더명에 쓸 시각정보 기록용
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
@@ -83,7 +84,8 @@ board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1�
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
                        + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
-                       + "_lr" + str(learning_rate))
+                       + "_lr" + str(learning_rate)
+                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)

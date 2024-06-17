@@ -12,7 +12,7 @@
     "hidden_size" : 50,
     "encoder_min" : 0.2,
     "encoder_max" : 2.0,
-    "scheduler_tmax" : 10,
+    "scheduler_tmax" : 5,
     "scheduler_eta_min" : 0.00001,
     "encoder_requires_grad" : true,
     "timestep" : 50

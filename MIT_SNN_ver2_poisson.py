@@ -20,6 +20,7 @@ from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
 from typing import Callable # 람다식
 from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
+import time # 텐서보드 폴더명에 쓸 시각정보 기록용
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
@@ -39,7 +40,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 일단 원석이가 0, 1번 쓰고 있다 하니 2번으로 지정
+os.environ["CUDA_VISIBLE_DEVICES"]= "1"  # 1번 사용 가능하니 1번으로 ㄱㄱ
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -85,7 +86,8 @@ board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1�
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
                        + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
-                       + "_lr" + str(learning_rate))
+                       + "_lr" + str(learning_rate)
+                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -193,7 +195,7 @@ def check_accuracy(loader, model):
             for t in range(timestep) : 
                 # timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
                 # out_fr += model(timestep_data) # 1회 순전파
-                encoded_data = encoder(data)
+                encoded_data = encoder(x)
                 out_fr += model(encoded_data)
         
         
