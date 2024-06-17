@@ -1,7 +1,8 @@
-# 시작 파일.
+# SNN 다이렉트 학습의 정확도는 어떤지 확인하기 위해 시간축 비틀고 포아송 인코딩 한 버전
+# 히든레이어 집어넣는건 그대로 하되, 이번엔 아예 인코딩 레이어를 없애고 포아송 인코딩 함수만으로 정확도를 측정해보도록 한다.
+# 구조가 좀 바뀌어야 할 것이다. 가령 타임스텝은 입력데이터 길이가 아닌 50으로 두는 등.
+
 # 학습 시작 전에 json 파일 이용해서 하이퍼파라미터와 함께 집어넣고, 데이터로더 이용해서 지정된 횟수만큼 학습 지시하며 필요한 경우 텐서보드에 찍는다.
-# nn을 상속하는 어떤 녀석이든지 딥러닝 계열로 들어갈 수 있다면, 기존의 딥러닝 MLP 모델의 구조를 그대로 가져오고 모델만 SNN으로 바꾸는 식으로 구성해볼까?
-# 일단 인코더 모델 따로 만들어진건 그대로 두고, SNN 모델 안에 그걸 넣으며, 연산은 텐서에서 진행하도록 하고 해당하는 함수만 뗴와다가 SNN 모델에 넣도록 해본다.
 
 # Imports
 import os
@@ -60,7 +61,7 @@ def loadJson() :
 json_data = loadJson()
 model_name = json_data['model_name']
 num_classes = json_data['num_classes']
-num_encoders = json_data['num_encoders']
+num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
 early_stop = json_data['early_stop']
 learning_rate = json_data['init_lr']
 batch_size = json_data['batch_size']
@@ -74,6 +75,7 @@ hidden_size = json_data['hidden_size']
 scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
+timestep = json_data['timestep']
 
 
 # 일단은 텐서보드 그대로 사용
@@ -98,13 +100,13 @@ earlystop_counter = early_stop
 min_valid_loss = float('inf')
 final_epoch = 0 # 마지막에 최종 에포크 확인용
 
-# 이제 메인으로 사용할 SNN 모델이 들어간다 : 얘 안에 단일뉴런 인코딩하는녀석이 들어가는 것.
+# 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
     def __init__(self, num_classes, num_encoders, hidden_size):
         super().__init__()
 
-        # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
+        # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기? -> 포아송이니 없앰
         self.encoders = nn.Sequential(
             # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
             layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
@@ -125,10 +127,10 @@ class SNN_MLP(nn.Module):
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
         
-        # 이러면 파라미터가 너무 적어지는 것 같지만, 일단 돌려서 결과를 뽑을 수 있게 해둔 뒤에 결과가 안좋으면 파라미터를 늘리도록 하자.
-
+    
+    # 여기서 인코딩 레이어만 딱 빼면 된다.
     def forward(self, x: torch.Tensor):
-        x = self.encoders(x)
+        # x = self.encoders(x)
         x = self.hidden(x)
         return self.layer(x)
 
@@ -161,7 +163,7 @@ class MITLoader_MLP_binary(Dataset):
         return signal, torch.tensor(label).long()
 
 
-# test 데이터로 정확도 측정
+# test 데이터로 정확도 측정 : 얘도 훈련때랑 똑같이 집어넣어야 한다.
 def check_accuracy(loader, model):
 
     # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
@@ -185,15 +187,14 @@ def check_accuracy(loader, model):
             
             label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
             
-            # 순전파 : SNN용으로 바꿔야 함
-            timestep = x.shape[1] # SNN은 타임스텝이 필요함
+            #timestep = x.shape[1] # SNN은 타임스텝이 필요함 -> 포아송 인코딩은 시간축을 새로 만들기 때문에 별개로 뒀음
             
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-            # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
             for t in range(timestep) : 
-                timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
-                out_fr += model(timestep_data) # 1회 순전파
-                # out_fr_list.append(model(timestep_data))  # 각 타임스텝의 출력을 리스트에 저장
+                # timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+                # out_fr += model(timestep_data) # 1회 순전파
+                encoded_data = encoder(data)
+                out_fr += model(encoded_data)
         
         
             out_fr = out_fr / timestep
@@ -201,7 +202,7 @@ def check_accuracy(loader, model):
             
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
 
-            weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
+            weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니깐..?
             final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
             
             # 여기에도 total loss 찍기
@@ -267,10 +268,14 @@ class_weight = torch.tensor(class_weight, device=device)
 # SNN 네트워크 초기화
 model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size).to(device=device)
 
-# 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
-manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
-model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
-model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
+# 포아송 인코딩이니 이녀석은 제낀다.
+# # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
+# manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
+# model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
+# model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
+
+# 대신 포아송이니 포아송 인코더를 선언한다.
+encoder = encoding.PoissonEncoder()
 
 # 여기서 인코더 가중치를 고정시켜야 하나??
 # 모든 파라미터를 가져오되, 'requires_grad'가 False인 파라미터는 제외
@@ -309,11 +314,15 @@ for epoch in range(num_epochs):
         
         
         # 순전파 : SNN용으로 바꿔야 함
-        timestep = data.shape[1] # SNN은 타임스텝이 필요함
+        # timestep = data.shape[1] # SNN은 타임스텝이 필요함 -> 포아송이니 187 타임스텝으로 지정했음
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
         for t in range(timestep) :  # 원래 timestep 들어가야함
-            timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
-            out_fr += model(timestep_data) # 1회 순전파
+            # timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름 -> 포아송이면 이거 필요없지 않나?
+            # out_fr += model(timestep_data) # 1회 순전파
+
+            # 맞겠지?
+            encoded_data = encoder(data)
+            out_fr += model(encoded_data)
             
         
         
