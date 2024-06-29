@@ -39,7 +39,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 일단 원석이가 0, 1번 쓰고 있다 하니 2번으로 지정
+os.environ["CUDA_VISIBLE_DEVICES"]= "0"  # GPU 번호 지정
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -115,8 +115,10 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 이제 이것도 여러개 만들어야 한다. 일단 일반 tp 인코더부터.
 class SNN_MLP_tp(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size):
+    def __init__(self, num_classes, num_encoders, hidden_size, repeat):
         super().__init__()
+
+        self.repeat = repeat
 
         # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
         self.encoders = nn.Sequential(
@@ -140,9 +142,17 @@ class SNN_MLP_tp(nn.Module):
             )
 
     def forward(self, x: torch.Tensor):
-        x = self.encoders(x)
-        x = self.hidden(x)
-        return self.layer(x)
+        # x = self.encoders(x)
+        # x = self.hidden(x)
+        # return self.layer(x)
+        outputs = 0.
+        for _ in range(self.repeat) : 
+            encoded = self.encoders(x)
+            hidden_output = self.hidden(encoded)
+            output = self.layer(hidden_output)
+            outputs += output
+        
+        return outputs
 
 
 
@@ -277,7 +287,7 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화 : 이젠 상황따라 이것도 바꿔야 한다.
-model = SNN_MLP_tp(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size).to(device=device)
+model = SNN_MLP_tp(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, repeat=encoder_tp_iter_repeat).to(device=device)
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
 manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
@@ -325,7 +335,7 @@ for epoch in range(num_epochs):
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
         for t in range(timestep) :  # 원래 timestep 들어가야함
             timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
-            out_fr += model(timestep_data) # 1회 순전파
+            out_fr += model(timestep_data) # 1회 순전파(내부에서 지정된 repeat만큼 반복하여 그 합계를 바로 여기에 내놓음)
             
         
         

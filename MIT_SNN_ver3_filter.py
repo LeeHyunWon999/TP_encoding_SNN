@@ -78,8 +78,8 @@ encoder_requires_grad = json_data['encoder_requires_grad']
 encoder_type = json_data['encoder_type']
 encoder_tp_iter_repeat = json_data['encoder_tp_iter_repeat']
 encoder_filter_kernel_size = json_data['encoder_filter_kernel_size']
-encoder_filter_input_channels = json_data['encoder_filter_input_channels']
-encoder_filter_output_channels = json_data['encoder_filter_output_channels']
+encoder_filter_input_channels = json_data['encoder_filter_input_channels'] # 인풋, 아웃풋 채널은 이론상 안 쓸 것이다.
+encoder_filter_output_channels = json_data['encoder_filter_output_channels'] # 인풋, 아웃풋 채널은 이론상 안 쓸 것이다. (혹시 모르니 변수만 남겨놓기)
 encoder_filter_stride = json_data['encoder_filter_stride']
 encoder_filter_padding = json_data['encoder_filter_padding']
 
@@ -114,14 +114,14 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 
 # 이제 이것도 여러개 만들어야 한다. 일단 일반 tp 인코더부터.
-class SNN_MLP_tp(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size):
+class SNN_MLP(nn.Module):
+    def __init__(self, num_classes, num_encoders, hidden_size, kernel_size):
         super().__init__()
 
         # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
         self.encoders = nn.Sequential(
             # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
-            layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
+            layer.Linear(kernel_size, num_encoders), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
         
@@ -201,13 +201,26 @@ def check_accuracy(loader, model):
             timestep = x.shape[1] # SNN은 타임스텝이 필요함
             
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-            # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
-            for t in range(timestep) : 
-                timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+            
+            
+
+            # 필터연산.
+            # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
+            # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
+            # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
+            paddinged_size = x.shape[1] + 2 * (encoder_filter_padding)
+            paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
+
+            # 데이터의 앞뒤로 제로패딩을 추가한다.
+            padded_data = F.pad(x, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
+
+            for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
+                timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
+                # timestep_data = data[:, t:t+encoder_filter_kernel_size]  # 각 timestep마다 (batch_size, 1) 크기로 자름, 어차피 배치 빼도 1차원 값이 되니 unsqueeze(1) 필요 없을듯? 참고로 얘도 아님
                 out_fr += model(timestep_data) # 1회 순전파
-                # out_fr_list.append(model(timestep_data))  # 각 타임스텝의 출력을 리스트에 저장
         
         
+
             out_fr = out_fr / timestep
             # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
             
@@ -277,12 +290,12 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화 : 이젠 상황따라 이것도 바꿔야 한다.
-model = SNN_MLP_tp(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size).to(device=device)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, kernel_size=encoder_filter_kernel_size).to(device=device)
 
-# 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
-manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
-model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
-model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
+# 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
+# manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
+# model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
+# model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
 
 # 여기서 인코더 가중치를 고정시켜야 하나??
 # 모든 파라미터를 가져오되, 'requires_grad'가 False인 파라미터는 제외
@@ -320,11 +333,23 @@ for epoch in range(num_epochs):
         label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
         
         
-        # 순전파 : SNN용으로 바꿔야 함
+        # 순전파 : 필터연산이므로 해당하는 만큼 자르는 스킬이 관건이 될 것
         timestep = data.shape[1] # SNN은 타임스텝이 필요함
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-        for t in range(timestep) :  # 원래 timestep 들어가야함
-            timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+
+        # 필터연산.
+        # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
+        # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
+        # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
+        paddinged_size = data.shape[1] + 2 * (encoder_filter_padding)
+        paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
+
+        # 데이터의 앞뒤로 제로패딩을 추가한다.
+        padded_data = F.pad(data, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
+
+        for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
+            timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
+            # timestep_data = data[:, t:t+encoder_filter_kernel_size]  # 각 timestep마다 (batch_size, 1) 크기로 자름, 어차피 배치 빼도 1차원 값이 되니 unsqueeze(1) 필요 없을듯? 참고로 얘도 아님
             out_fr += model(timestep_data) # 1회 순전파
             
         
