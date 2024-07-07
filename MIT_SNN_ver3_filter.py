@@ -72,6 +72,7 @@ class_weight = json_data['class_weight']
 encoder_min = json_data['encoder_min']
 encoder_max = json_data['encoder_max']
 hidden_size = json_data['hidden_size']
+hidden_size_2 = json_data['hidden_size_2']
 scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
@@ -115,33 +116,41 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 이제 이것도 여러개 만들어야 한다. 일단 일반 tp 인코더부터.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, kernel_size):
+    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, kernel_size):
         super().__init__()
 
-        # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
+        # SNN 필터 인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
         self.encoders = nn.Sequential(
             # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
             layer.Linear(kernel_size, num_encoders), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
         
-        # SNN 리니어 : 인코더 입력 -> 히든
+        # SNN 리니어 : 인코더 입력 -> 히든1
         self.hidden = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
+        
+        # SNN 리니어 : 히든1 -> 히든2
+        self.hidden_2 = nn.Sequential(
+            # layer.Flatten(),
+            layer.Linear(hidden_size, hidden_size_2), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            )
 
-        # SNN 리니어 : 히든 -> 출력
+        # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size, num_classes), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size_2, num_classes), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
 
     def forward(self, x: torch.Tensor):
         x = self.encoders(x)
         x = self.hidden(x)
+        x = self.hidden_2(x)
         return self.layer(x)
 
 
@@ -290,7 +299,8 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화 : 이젠 상황따라 이것도 바꿔야 한다.
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, kernel_size=encoder_filter_kernel_size).to(device=device)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size,
+                hidden_size_2=hidden_size_2, kernel_size=encoder_filter_kernel_size).to(device=device)
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
 # manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니

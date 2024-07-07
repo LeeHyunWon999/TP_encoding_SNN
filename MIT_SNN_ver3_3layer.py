@@ -39,7 +39,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 일단 원석이가 0, 1번 쓰고 있다 하니 2번으로 지정
+os.environ["CUDA_VISIBLE_DEVICES"]= "1"  # 일단 원석이가 0, 1번 쓰고 있다 하니 2번으로 지정
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
