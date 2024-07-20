@@ -240,7 +240,7 @@ def check_accuracy(loader, model):
                 
                 
             # 필터연산 No.2. 
-            out_fr = model(data)
+            out_fr = model(x) # 앞으로도 그렇겠지만, 순전파꺼 넣는다고 x 말고 data 넣는 치명적 실수 하지 말 것 !!!
         
 
 
