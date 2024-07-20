@@ -77,10 +77,9 @@ encoder_requires_grad = json_data['encoder_requires_grad']
 encoder_type = json_data['encoder_type']
 encoder_tp_iter_repeat = json_data['encoder_tp_iter_repeat']
 encoder_filter_kernel_size = json_data['encoder_filter_kernel_size']
-encoder_filter_input_channels = json_data['encoder_filter_input_channels'] # 인풋, 아웃풋 채널은 이론상 안 쓸 것이다.
-encoder_filter_output_channels = json_data['encoder_filter_output_channels'] # 인풋, 아웃풋 채널은 이론상 안 쓸 것이다. (혹시 모르니 변수만 남겨놓기)
 encoder_filter_stride = json_data['encoder_filter_stride']
 encoder_filter_padding = json_data['encoder_filter_padding']
+encoder_filter_channel_size = json_data['encoder_filter_channel_size'] # CNN 스타일로 가려면 채널갯수로 깊게 분석해야 할 것이다.
 
 
 # 일단은 텐서보드 그대로 사용
@@ -112,22 +111,19 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 
 
-# 이제 이것도 여러개 만들어야 한다. 일단 일반 tp 인코더부터.
+# 여기선 CNN 인코딩 방식을 취했다.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, kernel_size):
+    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding):
         super().__init__()
-
-        # SNN 필터 인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
-        self.encoders = nn.Sequential(
-            # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
-            layer.Linear(kernel_size, num_encoders), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
-            )
+        
+        # CNN 인코더 필터 : 이건 그냥 갈긴다.
+        self.cnn_encoders = nn.Conv1d(in_channels=1, out_channels=out_channels, kernel_size=kernel_size,
+                                      stride=stride, padding=padding)
         
         # SNN 리니어 : 인코더 입력 -> 히든1
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
+            layer.Linear(out_channels, hidden_size), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
         
@@ -146,10 +142,26 @@ class SNN_MLP(nn.Module):
             )
 
     def forward(self, x: torch.Tensor):
-        x = self.encoders(x)
-        x = self.hidden(x)
-        x = self.hidden_2(x)
-        return self.layer(x)
+        results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
+        
+        # CNN 필터는 채널 차원이 추가되므로 1번 쪽에 채널 차원 추가
+        x = x.unsqueeze(1)
+        # CNN 필터 통과시키기
+        x = self.cnn_encoders(x)
+        # print(x.shape)
+        timestep_size = x.shape[2]
+        # 근데 이제 이렇게 바꾼 데이터는 (배치, 채널, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
+        for i in range(timestep_size) : 
+            x_slice = x[:,:,i].squeeze() # 이러면 출력크기 차원이 사라지고 (배치, 채널)만 남겠지?
+            x_slice = self.hidden(x_slice)
+            x_slice = self.hidden_2(x_slice)
+            x_slice = self.layer(x_slice)
+            results += x_slice  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
+        # results = torch.stack(results, dim=0) # 텐서로 바꾸기
+        return results / timestep_size
+    
+    
+
 
 
 
@@ -211,24 +223,32 @@ def check_accuracy(loader, model):
             
             
 
-            # 필터연산.
-            # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
-            # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
-            # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
-            paddinged_size = x.shape[1] + 2 * (encoder_filter_padding)
-            paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
+            # # 필터연산.
+            # # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
+            # # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
+            # # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
+            # paddinged_size = x.shape[1] + 2 * (encoder_filter_padding)
+            # paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
 
-            # 데이터의 앞뒤로 제로패딩을 추가한다.
-            padded_data = F.pad(x, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
+            # # 데이터의 앞뒤로 제로패딩을 추가한다.
+            # padded_data = F.pad(x, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
 
-            for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
-                timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
-                # timestep_data = data[:, t:t+encoder_filter_kernel_size]  # 각 timestep마다 (batch_size, 1) 크기로 자름, 어차피 배치 빼도 1차원 값이 되니 unsqueeze(1) 필요 없을듯? 참고로 얘도 아님
-                out_fr += model(timestep_data) # 1회 순전파
+            # for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
+            #     timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
+            #     # timestep_data = data[:, t:t+encoder_filter_kernel_size]  # 각 timestep마다 (batch_size, 1) 크기로 자름, 어차피 배치 빼도 1차원 값이 되니 unsqueeze(1) 필요 없을듯? 참고로 얘도 아님
+            #     out_fr += model(timestep_data) # 1회 순전파
+                
+                
+            # 필터연산 No.2. 
+            out_fr = model(data)
         
-        
 
-            out_fr = out_fr / timestep
+
+                
+                
+            # 여기부턴 출력값 처리에 관한 내용이니 메커니즘 건들거면 여긴 안만져도 됨
+            
+            # out_fr = out_fr / timestep # 발화비율은 CNN필터 모델 안에서 계산되어 나온다.
             # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
             
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
@@ -297,8 +317,12 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화 : 이젠 상황따라 이것도 바꿔야 한다.
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size,
-                hidden_size_2=hidden_size_2, kernel_size=encoder_filter_kernel_size).to(device=device)
+# model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size,
+#                 hidden_size_2=hidden_size_2, kernel_size=encoder_filter_kernel_size).to(device=device) # 밑에꺼가 지금 하는 것
+
+model = SNN_MLP(num_classes = num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, 
+                out_channels=encoder_filter_channel_size, kernel_size=encoder_filter_kernel_size, 
+                stride=encoder_filter_stride, padding=encoder_filter_padding).to(device=device)
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
 # manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
@@ -345,26 +369,34 @@ for epoch in range(num_epochs):
         timestep = data.shape[1] # SNN은 타임스텝이 필요함
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
 
-        # 필터연산.
-        # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
-        # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
-        # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
-        paddinged_size = data.shape[1] + 2 * (encoder_filter_padding)
-        paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
 
-        # 데이터의 앞뒤로 제로패딩을 추가한다.
-        padded_data = F.pad(data, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
 
-        for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
-            timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
-            # timestep_data = data[:, t:t+encoder_filter_kernel_size]  # 각 timestep마다 (batch_size, 1) 크기로 자름, 어차피 배치 빼도 1차원 값이 되니 unsqueeze(1) 필요 없을듯? 참고로 얘도 아님
-            out_fr += model(timestep_data) # 1회 순전파
-            
+
+        # # 필터연산.
+        # # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
+        # # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
+        # # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
+        # paddinged_size = data.shape[1] + 2 * (encoder_filter_padding)
+        # paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
+
+        # # 데이터의 앞뒤로 제로패딩을 추가한다.
+        # padded_data = F.pad(data, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
+
+        # for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
+        #     timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
+        #     out_fr += model(timestep_data) # 1회 순전파
         
         
-        out_fr = out_fr / timestep
-        # print(out_fr) # 출력 firing rate, 잘 나오는 것으로 보임
-        # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
+        # 필터연산 No.2. 
+        # 기존에 들어온 데이터를 바로 CNN 필터로 돌려버린다. 대신 타임스텝 반복도 모델 안쪽에서 처리한다.
+        # 그렇게 나온 값을 인코더 제거된 리니어 모델에 넣는다.
+        out_fr = model(data)
+        
+                
+                
+        # 여기부턴 출력값 처리에 관한 내용이니 메커니즘 건들거면 여긴 안만져도 됨
+        
+        # out_fr = out_fr / timestep # CNN 필터는 이걸 알아서 내줘야 함
         loss = F.mse_loss(out_fr, label_onehot, reduction='none') # 요소별로 loss를 구해야 해서 reduction을 넣는다는데..
         weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하고 배치 차원 확장
         final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
