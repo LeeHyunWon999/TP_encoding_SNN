@@ -4,7 +4,7 @@ import json
 import numpy as np
 
 import torch
-from spikingjelly.activation_based import neuron
+from spikingjelly.activation_based import neuron, encoding
 
 # 똑같은 TP 인코더, 근데 이제 2차원용으로 차원 확장된 기본버전
 
@@ -52,34 +52,33 @@ def encode(json_data) :
     # 데이터 파일 읽기 시도
     inputData = np.loadtxt(json_data["inputPath"], delimiter=',')
     
+    # 188째 값은 없앤다.
+    inputData = np.delete(inputData, 187, axis=1)
+    print(inputData.shape)
+    
     # 파일 형변환
     inputData = torch.tensor(inputData)
     
-    # 입력데이터는 [N, T] 형식인데, 인코더 뉴런은 [T, N, *] 을 기대한다. 따라서 축을 변경한다.
-    inputData = inputData.transpose(1,0)
     
-    print(inputData)
-
-    # print(inputData)
-    # print(fileName)
     
-    # 임시 : 뉴런 생성(뉴런 여러개 만들기)
-    # 임시 : 필요한 경우 내부 막전위값 변화를 timestep별로 보도록 할 수도 있겠지만.. 일단은 패스
-    neuron_list = []
+    # # 입력데이터는 [N, T] 형식인데, 인코더 뉴런은 [T, N, *] 을 기대한다. 따라서 축을 변경한다.
+    # inputData = inputData.transpose(1,0)
+    
     encoded_list = []
     
-    # 시간축을 이렇게 조지는게 내가 하는거라서.. ** 일단 이거부터 수정필요 **
-    for i in range(json_data["dim"]) : 
-        # Leaky인 경우 tau값은 0.5~1.5 사이에서 랜덤 지정
-        if json_data["leaky"] : 
-            this_tau = np.random.rand() + 0.5
-        else : 
-            this_tau = 1
-        neuron_list.append(TP_neuron(tau = this_tau, g = ((float(i) + 1) / float(json_data["dim"])) + 0.5))
-        neuron_list[i].step_mode = 'm'
-        encoded_list.append(neuron_list[i](inputData).numpy())
-        print(i,"째 뉴런(g=" + str(neuron_list[i].g) + ") 인코딩 결과 : ", encoded_list[i])
-        neuron_list[i].reset()
+    # 포아송은 그냥 이미 있는 인코더 쓰면 된다.
+    encoder = encoding.PoissonEncoder()
+    
+    # 포아송은 확률적으로 출력하므로 이걸 반복해야 한다.
+    for i in range(json_data['dim']) : 
+        encoded_data = encoder(inputData)
+    
+        print(inputData.shape)
+        print(encoded_data)
+        encoded_list.append(encoded_data.numpy())
+        print(len(encoded_list))
+        print(len(encoded_list[0]))
+        print(len(encoded_list[0][0]))
     
 
 
@@ -88,19 +87,17 @@ def encode(json_data) :
     
     
     
-    # 임시 : csv로 저장(각 뉴런들의 결과 값 리스트 합치고 저장)
-    # np.savetxt('./data/output/' + fileName + '_encoded.csv', encoded_list, fmt="%f", delimiter=',') -> 이건 csv로 저장하면 안되는 것 같다. 내껀 3차원이니깐..
-    
     # npy 형태로 통일
     encoded_array = np.array(encoded_list)
-    # 출력데이터 또한 그 순서를 좀 바꾸도록 하자. 지금은 (뉴런, T, 데이터갯수) 인데, 이걸 (데이터갯수, 뉴런, T) 이걸로 바꿔야겠다.
-    encoded_array = encoded_array.transpose(2, 0, 1)
+    # 출력데이터 또한 그 순서를 좀 바꾸도록 하자. 이 포아송 녀석은 (T, 데이터갯수, 뉴런) 인데, 이걸 (데이터갯수, 뉴런, T) 이걸로 바꿔야겠다.
+    encoded_array = encoded_array.transpose(1, 2, 0)
     
     # 잘 되는지 출력필요
     print(encoded_array)
+    print(encoded_array.shape)
     
     # npy로 저장
-    np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_encoded_Poisson.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
+    np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_timestep_Poisson.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
 
 
 

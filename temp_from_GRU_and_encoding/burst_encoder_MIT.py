@@ -52,6 +52,10 @@ def encode(json_data) :
     # 데이터 파일 읽기 시도
     inputData = np.loadtxt(json_data["inputPath"], delimiter=',')
     
+    # 188째 값은 없앤다.
+    inputData = np.delete(inputData, 187, axis=1)
+    print(inputData.shape)
+    
     # 파일 형변환
     inputData = torch.tensor(inputData)
     
@@ -87,9 +91,6 @@ def encode(json_data) :
     
     
     
-    
-    # 임시 : csv로 저장(각 뉴런들의 결과 값 리스트 합치고 저장)
-    # np.savetxt('./data/output/' + fileName + '_encoded.csv', encoded_list, fmt="%f", delimiter=',') -> 이건 csv로 저장하면 안되는 것 같다. 내껀 3차원이니깐..
     
     # npy 형태로 통일
     encoded_array = np.array(encoded_list)

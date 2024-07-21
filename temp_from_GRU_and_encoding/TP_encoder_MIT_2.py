@@ -77,15 +77,20 @@ def encode(json_data) :
             this_tau = 1
         neuron_list.append(TP_neuron(tau = this_tau, g = ((float(i) + 1) / float(json_data["dim"])) + 0.5))
         neuron_list[i].step_mode = 'm'
-        encoded_list.append(neuron_list[i](inputData).numpy())
+        encoded_data = neuron_list[i](inputData).numpy()
+        # 188째 값은 없앤다.
+        encoded_data = np.delete(encoded_data, 187, axis=0)
+        encoded_list.append(encoded_data)
         print(i,"째 뉴런(g=" + str(neuron_list[i].g) + ") 인코딩 결과 : ", encoded_list[i])
         neuron_list[i].reset()
+    
+    
+        print(len(encoded_list[0]))
+        print(len(encoded_list[0][0]))
     
 
 
     print("인코딩 완료")
-    
-    
     
     
     # 임시 : csv로 저장(각 뉴런들의 결과 값 리스트 합치고 저장)
@@ -98,6 +103,7 @@ def encode(json_data) :
     
     # 잘 되는지 출력필요
     print(encoded_array)
+    print(encoded_array.shape)
     
     # npy로 저장
     np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_encoded_TP.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
