@@ -21,5 +21,6 @@
     "encoder_filter_kernel_size" : 32,
     "encoder_filter_stride" : 1,
     "encoder_filter_padding" : 0, 
-    "encoder_filter_channel_size" : 256
+    "encoder_filter_channel_size" : 256,
+    "random_seed" : 999
 }

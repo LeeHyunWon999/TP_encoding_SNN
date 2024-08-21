@@ -18,5 +18,6 @@
     "encoder_requires_grad" : true,
     "timestep" : 50,
     "burst_beta" : 2.0,
-    "burst_init_th" : 0.125
+    "burst_init_th" : 0.125,
+    "random_seed" : 999
 }

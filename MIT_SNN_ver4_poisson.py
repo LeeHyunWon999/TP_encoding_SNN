@@ -21,6 +21,7 @@ import torchmetrics # 평가지표 로깅용
 from typing import Callable # 람다식
 from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 import time # 텐서보드 폴더명에 쓸 시각정보 기록용
+import random # 랜덤시드 고정용
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
@@ -78,7 +79,18 @@ scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
 timestep = json_data['timestep']
+random_seed = json_data['random_seed']
 
+# 랜덤시드 고정
+seed = random_seed
+deterministic = True
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+if deterministic:
+	torch.backends.cudnn.deterministic = True
+	torch.backends.cudnn.benchmark = False
 
 # 일단은 텐서보드 그대로 사용
 # 텐서보드 선언(인자도 미리 뽑아두기; 나중에 json으로 바꿀 것!)
@@ -192,7 +204,7 @@ def check_accuracy(loader, model):
     print("validation 진행중...")
 
     with  torch.no_grad():
-        for x, y in loader:
+        for x, y in loader:         ############### train쪽에서 코드 복붙 시 (data, targets) 가 (x, y) 로 바뀌는 것에 유의할 것!!!!!!!!###############
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
             
