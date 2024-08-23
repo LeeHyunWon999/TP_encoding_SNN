@@ -81,6 +81,10 @@ encoder_filter_stride = json_data['encoder_filter_stride']
 encoder_filter_padding = json_data['encoder_filter_padding']
 encoder_filter_channel_size = json_data['encoder_filter_channel_size'] # CNN 스타일로 가려면 채널갯수로 깊게 분석해야 할 것이다.
 random_seed = json_data['random_seed']
+checkpoint_save = json_data['checkpoint_save']
+checkpoint_path = json_data['checkpoint_path']
+threshold_value = json_data['threshold_value']
+
 
 # 랜덤시드 고정
 seed = random_seed
@@ -103,8 +107,15 @@ board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1�
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
                        + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
-                       + "_lr" + str(learning_rate)
+                       + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
+
+# 체크포인트 위치도 상세히 갱신
+checkpoint_path += str(str(model_name) + "_" + board_class
+                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
+                       + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
+                       + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
+                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S') + ".pt")
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -127,7 +138,7 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 여기선 CNN 인코딩 방식을 취했다.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding):
+    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value):
         super().__init__()
         
         # CNN 인코더 필터 : 이건 그냥 갈긴다.
@@ -135,27 +146,27 @@ class SNN_MLP(nn.Module):
                                       stride=stride, padding=padding)
         
         # CNN 인코더 IF뉴런 : 이거 추가해서 인코더 완성하기
-        self.cnn_IF_layer = neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None)
+        self.cnn_IF_layer = neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value)
         
         # SNN 리니어 : 인코더 입력 -> 히든1
         self.hidden = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(out_channels, hidden_size), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
         # SNN 리니어 : 히든1 -> 히든2
         self.hidden_2 = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size, hidden_size_2), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size_2, num_classes), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
 
     def forward(self, x: torch.Tensor):
@@ -340,7 +351,7 @@ class_weight = torch.tensor(class_weight, device=device)
 
 model = SNN_MLP(num_classes = num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, 
                 out_channels=encoder_filter_channel_size, kernel_size=encoder_filter_kernel_size, 
-                stride=encoder_filter_stride, padding=encoder_filter_padding).to(device=device)
+                stride=encoder_filter_stride, padding=encoder_filter_padding, threshold_value=threshold_value).to(device=device)
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
 # manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
@@ -476,13 +487,18 @@ for epoch in range(num_epochs):
 
     print('epoch ' + str(epoch) + ', valid loss : ' + str(valid_loss))
 
-    # 얼리스탑 : valid_loss와 valid_auroc_macro를 동시에 비교하며 진행
+    # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
     if valid_loss < min_valid_loss : 
         min_valid_loss = valid_loss
         earlystop_counter = early_stop
-    elif valid_auroc_macro > max_valid_auroc_macro : 
-        max_valid_auroc_macro = valid_auroc_macro
-        early_stop_counter = early_stop
+        if checkpoint_save : 
+            print("best performance, saving..")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': valid_loss,
+                }, checkpoint_path)
     else : 
         earlystop_counter -= 1
         if earlystop_counter == 0 : 

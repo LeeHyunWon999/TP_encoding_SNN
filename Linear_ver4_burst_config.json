@@ -1,5 +1,5 @@
 {
-    "model_name" : "SNN_MLP_ver2_burst",
+    "model_name" : "SNN_MLP_ver4_burst",
     "num_classes" : 2,
     "num_encoders" : 187,
     "early_stop" : 25,
@@ -19,5 +19,8 @@
     "timestep" : 50,
     "burst_beta" : 2.0,
     "burst_init_th" : 0.125,
-    "random_seed" : 999
+    "random_seed" : 999,
+    "checkpoint_save" : true,
+    "checkpoint_path" : "/data/leehyunwon/ECG-SNN/",
+    "threshold_value" : 1.0
 }

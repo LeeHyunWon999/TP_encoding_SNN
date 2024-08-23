@@ -80,6 +80,9 @@ scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
 timestep = json_data['timestep']
 random_seed = json_data['random_seed']
+checkpoint_save = json_data['checkpoint_save']
+checkpoint_path = json_data['checkpoint_path']
+threshold_value = json_data['threshold_value']
 
 # 랜덤시드 고정
 seed = random_seed
@@ -99,8 +102,15 @@ board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1�
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
                        + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
-                       + "_lr" + str(learning_rate)
+                       + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
+
+# 체크포인트 위치도 상세히 갱신
+checkpoint_path += str(str(model_name) + "_" + board_class
+                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
+                       + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
+                       + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
+                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S') + ".pt")
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -118,41 +128,33 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2):
+    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value):
         super().__init__()
-
-        # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기? -> 포아송이니 없앰
-        self.encoders = nn.Sequential(
-            # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
-            layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
-            )
         
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
         # SNN 리니어 : 인코더 히든 -> 히든2
         self.hidden2 = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size, hidden_size_2), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size_2, num_classes), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
     
     # 여기서 인코딩 레이어만 딱 빼면 된다.
     def forward(self, x: torch.Tensor):
-        # x = self.encoders(x)
         x = self.hidden(x)
         x = self.hidden2(x)
         return self.layer(x)
@@ -289,7 +291,7 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2).to(device=device)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, threshold_value=threshold_value).to(device=device)
 
 # 포아송 인코딩이니 이녀석은 제낀다.
 # # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
@@ -413,9 +415,18 @@ for epoch in range(num_epochs):
 
     print('epoch ' + str(epoch) + ', valid loss : ' + str(valid_loss))
 
+    # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
     if valid_loss < min_valid_loss : 
         min_valid_loss = valid_loss
         earlystop_counter = early_stop
+        if checkpoint_save : 
+            print("best performance, saving..")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': valid_loss,
+                }, checkpoint_path)
     else : 
         earlystop_counter -= 1
         if earlystop_counter == 0 : 

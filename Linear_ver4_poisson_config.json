@@ -1,5 +1,5 @@
 {
-    "model_name" : "SNN_MLP_ver2_poisson_2",
+    "model_name" : "SNN_MLP_ver4_poisson",
     "num_classes" : 2,
     "num_encoders" : 187,
     "early_stop" : 25,
@@ -17,5 +17,8 @@
     "scheduler_eta_min" : 0.00001,
     "encoder_requires_grad" : true,
     "timestep" : 50,
-    "random_seed" : 999
+    "random_seed" : 999,
+    "checkpoint_save" : true,
+    "checkpoint_path" : "/data/leehyunwon/ECG-SNN/",
+    "threshold_value" : 1.0
 }

@@ -1,7 +1,7 @@
 {
-    "model_name" : "SNN_MLP_ver3_filter_CNN_IF",
+    "model_name" : "SNN_MLP_ver4_filter_CNN_IF",
     "num_classes" : 2,
-    "num_encoders" : 1024,
+    "num_encoders" : 512,
     "early_stop" : 25,
     "init_lr" : 0.001,
     "batch_size" : 256,
@@ -22,5 +22,8 @@
     "encoder_filter_stride" : 1,
     "encoder_filter_padding" : 0, 
     "encoder_filter_channel_size" : 256,
-    "random_seed" : 999
+    "random_seed" : 999,
+    "checkpoint_save" : true,
+    "checkpoint_path" : "/data/leehyunwon/ECG-SNN/",
+    "threshold_value" : 1.0
 }
