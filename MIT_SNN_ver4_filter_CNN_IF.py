@@ -37,7 +37,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "0"  # 작성 기준 1, 2번 바쁘게 사용중이므로 0번 지정
+os.environ["CUDA_VISIBLE_DEVICES"]= "0"  
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -105,14 +105,14 @@ if deterministic:
 # 텐서보드 사용 유무를 json에서 설정하는 경우 눈치껏 조건문으로 비활성화!
 board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1로 두진 않겠지?
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
-                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
+                       + "_channel" + str(encoder_filter_channel_size) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
                        + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
 
 # 체크포인트 위치도 상세히 갱신
 checkpoint_path += str(str(model_name) + "_" + board_class
-                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
+                       + "_channel" + str(encoder_filter_channel_size) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
                        + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S') + ".pt")
