@@ -484,6 +484,16 @@ for epoch in range(num_epochs):
             if earlystop_counter == 0 : 
                 final_epoch = epoch
                 break # train epoch를 빠져나옴
+    else : 
+        final_epoch = epoch
+        if epoch == num_epochs - 1 : # 얼리스탑과 별개로 최종 모델 저장
+            print("last epoch model saving..")
+            torch.save({
+                'epoch': final_epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': valid_loss,
+                }, lastpoint_path)
 
     
 
@@ -491,16 +501,6 @@ for epoch in range(num_epochs):
 
 
 print("training finished; epoch :" + str(final_epoch))
-
-# 얼리스탑과 별개로 최종 모델 저장
-if checkpoint_save : 
-    print("last epoch model saving..")
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': valid_loss,
-                    }, lastpoint_path)
 
 
 # 마지막엔 텐서보드 닫기
