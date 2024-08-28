@@ -1,13 +1,14 @@
 {
-    "model_name" : "SNN_MLP_ver4_filter_CNN_IF",
+    "model_name" : "SNN_MLP_ver5_filter_CNN_IF",
     "num_classes" : 2,
     "num_encoders" : 64,
     "early_stop" : 25,
+    "early_stop_enable" : false,
     "init_lr" : 0.001,
     "batch_size" : 256,
-    "num_epochs" : 1500,
-    "train_path" : "/data/common/MIT-BIH/mitbih_train.csv",
-    "test_path" : "/data/common/MIT-BIH/mitbih_test.csv", 
+    "num_epochs" : 1000,
+    "train_path" : "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
+    "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv", 
     "class_weight" : [1.0, 4.0], 
     "hidden_size" : 1024,
     "hidden_size_2" : 1024,
@@ -23,7 +24,7 @@
     "encoder_filter_padding" : 0, 
     "encoder_filter_channel_size" : 2048,
     "random_seed" : 999,
-    "checkpoint_save" : false,
-    "checkpoint_path" : "/data/leehyunwon/ECG-SNN/",
+    "checkpoint_save" : true,
+    "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
     "threshold_value" : 1.0
 }

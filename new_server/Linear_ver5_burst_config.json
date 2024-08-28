@@ -1,13 +1,14 @@
 {
-    "model_name" : "SNN_MLP_ver4_burst",
+    "model_name" : "SNN_MLP_ver5_burst",
     "num_classes" : 2,
     "num_encoders" : 187,
     "early_stop" : 25,
+    "early_stop_enable" : true,
     "init_lr" : 0.0005,
     "batch_size" : 128,
     "num_epochs" : 150,
-    "train_path" : "/data/common/MIT-BIH/mitbih_train.csv",
-    "test_path" : "/data/common/MIT-BIH/mitbih_test.csv", 
+    "train_path" : "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
+    "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv", 
     "class_weight" : [1.0, 4.0], 
     "hidden_size" : 1024,
     "hidden_size_2" : 1024,
@@ -21,6 +22,6 @@
     "burst_init_th" : 0.125,
     "random_seed" : 999,
     "checkpoint_save" : true,
-    "checkpoint_path" : "/data/leehyunwon/ECG-SNN/",
+    "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
     "threshold_value" : 1.0
 }

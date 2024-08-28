@@ -65,6 +65,7 @@ model_name = json_data['model_name']
 num_classes = json_data['num_classes']
 num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
 early_stop = json_data['early_stop']
+early_stop_enable = json_data['early_stop_enable']
 learning_rate = json_data['init_lr']
 batch_size = json_data['batch_size']
 num_epochs = json_data['num_epochs']
@@ -110,7 +111,13 @@ checkpoint_path += str(str(model_name) + "_" + board_class
                        + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
                        + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
-                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S') + ".pt")
+                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
+
+# 최종에포크 저장용
+lastpoint_path = checkpoint_path + "_lastEpoch.pt"
+
+# 체크포인트 확장자 마무리
+checkpoint_path += ".pt"
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -416,22 +423,23 @@ for epoch in range(num_epochs):
     print('epoch ' + str(epoch) + ', valid loss : ' + str(valid_loss))
 
     # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
-    if valid_loss < min_valid_loss : 
-        min_valid_loss = valid_loss
-        earlystop_counter = early_stop
-        if checkpoint_save : 
-            print("best performance, saving..")
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': valid_loss,
-                }, checkpoint_path)
-    else : 
-        earlystop_counter -= 1
-        if earlystop_counter == 0 : 
-            final_epoch = epoch
-            break # train epoch를 빠져나옴
+    if early_stop_enable :
+        if valid_loss < min_valid_loss : 
+            min_valid_loss = valid_loss
+            earlystop_counter = early_stop
+            if checkpoint_save : 
+                print("best performance, saving..")
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': valid_loss,
+                    }, checkpoint_path)
+        else : 
+            earlystop_counter -= 1
+            if earlystop_counter == 0 : 
+                final_epoch = epoch
+                break # train epoch를 빠져나옴
 
     
 
@@ -439,6 +447,16 @@ for epoch in range(num_epochs):
 
 
 print("training finished; epoch :" + str(final_epoch))
+
+# 얼리스탑과 별개로 최종 모델 저장
+if checkpoint_save : 
+    print("last epoch model saving..")
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': valid_loss,
+                    }, lastpoint_path)
 
 
 # 마지막엔 텐서보드 닫기
