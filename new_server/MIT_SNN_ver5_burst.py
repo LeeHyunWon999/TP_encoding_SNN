@@ -481,8 +481,15 @@ for epoch in range(num_epochs):
                     }, checkpoint_path)
         else : 
             earlystop_counter -= 1
-            if earlystop_counter == 0 : 
+            if earlystop_counter == 0 : # train epoch 빠져나오며 최종 모델 저장
                 final_epoch = epoch
+                print("last epoch model saving..")
+                torch.save({
+                    'epoch': final_epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': valid_loss,
+                    }, lastpoint_path)
                 break # train epoch를 빠져나옴
     else : 
         final_epoch = epoch

@@ -41,7 +41,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "1"  # 1번 사용 가능하니 1번으로 ㄱㄱ
+os.environ["CUDA_VISIBLE_DEVICES"]= "1"  # 돌릴때마다 남는걸로 ㄱㄱ
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -437,8 +437,15 @@ for epoch in range(num_epochs):
                     }, checkpoint_path)
         else : 
             earlystop_counter -= 1
-            if earlystop_counter == 0 : 
+            if earlystop_counter == 0 : # train epoch 빠져나오며 최종 모델 저장
                 final_epoch = epoch
+                print("last epoch model saving..")
+                torch.save({
+                    'epoch': final_epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': valid_loss,
+                    }, lastpoint_path)
                 break # train epoch를 빠져나옴
     else : 
         final_epoch = epoch
