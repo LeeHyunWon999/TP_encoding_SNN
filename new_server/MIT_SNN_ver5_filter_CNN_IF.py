@@ -85,6 +85,7 @@ random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
+need_bias = json_data['need_bias']
 
 
 # 랜덤시드 고정
@@ -145,12 +146,12 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 여기선 CNN 인코딩 방식을 취했다.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value):
+    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value, bias_option):
         super().__init__()
         
         # CNN 인코더 필터 : 이건 그냥 갈긴다.
         self.cnn_encoders = nn.Conv1d(in_channels=1, out_channels=out_channels, kernel_size=kernel_size,
-                                      stride=stride, padding=padding)
+                                      stride=stride, padding=padding, bias=bias_option) # 여기도 bias가 있다 함
         
         # CNN 인코더 IF뉴런 : 이거 추가해서 인코더 완성하기
         self.cnn_IF_layer = neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value)
@@ -158,21 +159,21 @@ class SNN_MLP(nn.Module):
         # SNN 리니어 : 인코더 입력 -> 히든1
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(out_channels, hidden_size), # bias는 일단 기본값 True로 두기
+            layer.Linear(out_channels, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
         # SNN 리니어 : 히든1 -> 히든2
         self.hidden_2 = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size, hidden_size_2), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size_2, num_classes), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size_2, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
 
@@ -358,7 +359,7 @@ class_weight = torch.tensor(class_weight, device=device)
 
 model = SNN_MLP(num_classes = num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, 
                 out_channels=encoder_filter_channel_size, kernel_size=encoder_filter_kernel_size, 
-                stride=encoder_filter_stride, padding=encoder_filter_padding, threshold_value=threshold_value).to(device=device)
+                stride=encoder_filter_stride, padding=encoder_filter_padding, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
 # manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니

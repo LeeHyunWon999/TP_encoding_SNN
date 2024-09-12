@@ -41,7 +41,7 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "1"  # 돌릴때마다 남는걸로 ㄱㄱ
+os.environ["CUDA_VISIBLE_DEVICES"]= "3"  # 돌릴때마다 남는걸로 ㄱㄱ
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -84,6 +84,7 @@ random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
+need_bias = json_data['need_bias']
 
 # 랜덤시드 고정
 seed = random_seed
@@ -135,27 +136,27 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value):
+    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option):
         super().__init__()
         
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
+            layer.Linear(num_encoders, hidden_size, bias = bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
         # SNN 리니어 : 인코더 히든 -> 히든2
         self.hidden2 = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size, hidden_size_2), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size, hidden_size_2, bias = bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size_2, num_classes), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size_2, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
@@ -298,7 +299,8 @@ class_weight = torch.tensor(class_weight, device=device)
 
 
 # SNN 네트워크 초기화
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, threshold_value=threshold_value).to(device=device)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, 
+                hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 
 # 포아송 인코딩이니 이녀석은 제낀다.
 # # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
