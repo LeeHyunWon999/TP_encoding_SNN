@@ -33,11 +33,11 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 # from temp_from_GRU import TP_encoder_MIT as TP
 
 
-# import torchmetrics.functional as TF # 이걸로 메트릭 한번에 간편하게 할 수 있다던데?
+# import torchmetrics.functional as TF # 이걸로 메트d릭 한번에 간편하게 할 수 있다던데?
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "2"   # 이쪽 서버는 GPU 4개임
+os.environ["CUDA_VISIBLE_DEVICES"]= "0"   # 이쪽 서버는 GPU 4개임
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -163,6 +163,7 @@ class SNN_MLP(nn.Module):
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
+        # 레이어 1개로 줄이는 버전 다시 학습 필요
         # SNN 리니어 : 히든1 -> 히든2
         self.hidden_2 = nn.Sequential(
             # layer.Flatten(),
