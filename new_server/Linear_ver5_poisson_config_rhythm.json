@@ -1,17 +1,17 @@
 {
     "model_name" : "SNN_MLP_ver5_poisson_rhythm",
     "num_classes" : 2,
-    "num_encoders" : 187,
+    "num_encoders" : 18000,
     "early_stop" : 30,
-    "early_stop_enable" : true,
+    "early_stop_enable" : false,
     "init_lr" : 0.001,
     "batch_size" : 128,
-    "num_epochs" : 150,
-    "train_path" : "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
-    "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv", 
-    "class_weight" : [1.0, 4.0], 
-    "hidden_size" : 1000,
-    "hidden_size_2" : 1000,
+    "num_epochs" : 500,
+    "train_path" : "/home/hschoi/data/CinC_dataset/train/training2017",
+    "test_path" : "/home/hschoi/data/CinC_dataset/valid", 
+    "class_weight" : [1.0, 9.0], 
+    "hidden_size" : 1024,
+    "hidden_size_2" : 1024,
     "encoder_min" : 0.2,
     "encoder_max" : 2.0,
     "scheduler_tmax" : 5,
@@ -22,5 +22,5 @@
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
     "threshold_value" : 1.0,
-    "need_bias" : false
+    "need_bias" : true
 }

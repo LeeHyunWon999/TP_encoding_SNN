@@ -85,6 +85,7 @@ random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
+reset_value_residual = json_data['reset_value_residual']
 need_bias = json_data['need_bias']
 
 
@@ -146,7 +147,7 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 여기선 CNN 인코딩 방식을 취했다.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value, bias_option):
+    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value, bias_option, reset_value_residual):
         super().__init__()
         
         # CNN 인코더 필터 : 이건 그냥 갈긴다.
@@ -154,13 +155,13 @@ class SNN_MLP(nn.Module):
                                       stride=stride, padding=padding, bias=bias_option) # 여기도 bias가 있다 함
         
         # CNN 인코더 IF뉴런 : 이거 추가해서 인코더 완성하기
-        self.cnn_IF_layer = neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value)
+        self.cnn_IF_layer = neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value)
         
         # SNN 리니어 : 인코더 입력 -> 히든1
         self.hidden = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(out_channels, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
         
         # 레이어 1개로 줄이는 버전 다시 학습 필요
@@ -168,14 +169,14 @@ class SNN_MLP(nn.Module):
         self.hidden_2 = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size_2, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
 
     def forward(self, x: torch.Tensor):

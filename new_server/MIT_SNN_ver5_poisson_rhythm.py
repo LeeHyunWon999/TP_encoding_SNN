@@ -37,6 +37,16 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 # from temp_from_GRU import TP_encoder_MIT as TP
 
 
+# 리듬 전처리 : 데이터로더에서 필요한 패키지
+from typing import Callable, Tuple, List, Optional
+import torch.utils.data as data
+from torchaudio.transforms import Spectrogram
+import csv
+import scipy.io as sio
+from typing import Tuple, Dict, Any
+from scipy import signal
+import math
+
 # import torchmetrics.functional as TF # 이걸로 메트릭 한번에 간편하게 할 수 있다던데?
 
 # Cuda 써야겠지?
@@ -169,31 +179,404 @@ class SNN_MLP(nn.Module):
 
 
 
+# 여기 로더는 폴더로부터 레퍼런스를 가져와야 한다.
+def load_references(folder: str = '../training') -> Tuple[List[np.ndarray], List[str], int, List[str]]:
+    """
+    Parameters
+    ----------
+    folder : str, optional
+        Ort der Trainingsdaten. Default Wert '../training'.
+    Returns
+    -------
+    ecg_leads : List[np.ndarray]
+        EKG Signale.
+    ecg_labels : List[str]
+        Gleiche Laenge wie ecg_leads. Werte: 'N','A','O','~'
+    fs : int
+        Sampling Frequenz.
+    ecg_names : List[str]
+        Name der geladenen Dateien
+    """
+    # Check Parameter
+    assert isinstance(folder, str), "Parameter folder muss ein string sein aber {} gegeben".format(type(folder))
+    assert os.path.exists(folder), 'Parameter folder existiert nicht!'
+    # Initialisiere Listen für leads, labels und names
+    ecg_leads: List[np.ndarray] = []
+    ecg_labels: List[str] = []
+    ecg_names: List[str] = []
+    # Setze sampling Frequenz
+    fs: int = 300
+    # Lade references Datei
+    with open(os.path.join(folder, 'REFERENCE.csv')) as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        # Iteriere über jede Zeile
+        for row in csv_reader:
+            # Lade MatLab Datei mit EKG lead and label
+            data = sio.loadmat(os.path.join(folder, row[0] + '.mat'))
+            ecg_leads.append(data['val'][0])
+            ecg_labels.append(row[1])
+            ecg_names.append(row[0])
+    # Zeige an wie viele Daten geladen wurden
+    print("{}\t Dateien wurden geladen.".format(len(ecg_leads)))
+    return ecg_leads, ecg_labels, fs, ecg_names
 
 
 
-# 데이터 가져오는 알맹이 클래스
-class MITLoader_MLP_binary(Dataset):
+# 리듬 데이터셋 가져오는 로더
+class CinCLoader_MLP(data.Dataset):
+    """
+    This class implements the ECG dataset for atrial fibrillation classification.
+    """
 
-    def __init__(self, csv_file, transforms: Callable = lambda x: x) -> None:
-        super().__init__()
-        self.annotations = pd.read_csv(csv_file).values
-        self.transforms = transforms
-
-    def __len__(self):
-        return self.annotations.shape[0]
-
-    def __getitem__(self, item):
-        signal = self.annotations[item, :-1]
-        signal = torch.from_numpy(signal).float()
-        if self.transforms : 
-            signal = self.transforms(signal)
+    def __init__(self, ecg_leads: List[np.ndarray], ecg_labels: List[str], class_type : str,
+                 augmentation_pipeline: Optional[nn.Module] = None, spectrogram_length: int = 563, unfold : bool = False, spectrogram_control : bool = False,
+                 ecg_sequence_length: int = 18000, ecg_window_size: int = 256, ecg_step: int = 256 - 32,
+                 normalize: bool = True, fs: int = 300, spectrogram_n_fft: int = 64, spectrogram_win_length: int = 64,
+                 spectrogram_power: int = 1, spectrogram_normalized: bool = True, two_classes: bool = False) -> None:
+        """
+        Constructor method
+        :param ecg_leads: (List[np.ndarray]) ECG data as list of numpy arrays
+        :param ecg_labels: (List[str]) ECG labels as list of strings (N, O, A, ~)
+        :param augmentation_pipeline: (Optional[nn.Module]) Augmentation pipeline
+        :param spectrogram_length: (int) Fixed spectrogram length (achieved by zero padding)
+        :param spectrogram_shape: (Tuple[int, int]) Final size of the spectrogram
+        :param ecg_sequence_length: (int) Fixed length of sequence
+        :param ecg_window_size: (int) Window size to be applied during unfolding
+        :param ecg_step: (int) Step size of unfolding
+        :param normalize: (bool) If true signal is normalized to a mean and std of zero and one respectively
+        :param fs: (int) Sampling frequency
+        :param spectrogram_n_fft: (int) FFT size utilized in spectrogram
+        :param spectrogram_win_length: (int) Spectrogram window length
+        :param spectrogram_power: (int) Power utilized in spectrogram
+        :param spectrogram_normalized: (int) If true spectrogram is normalized
+        :param two_classes: (bool) If true only two classes are utilized
+        """
+        # Call super constructor
+        super(CinCLoader_MLP, self).__init__()
+        # Save parameters
+        self.ecg_leads: List[torch.Tensor] = [torch.from_numpy(data_sample).float() for data_sample in ecg_leads]
+        self.augmentation_pipeline: nn.Module = augmentation_pipeline \
+            if augmentation_pipeline is not None else nn.Identity()
+        self.class_type = class_type
+        self.spectrogram_length: int = spectrogram_length
+        self.unfold = unfold
+        self.spectrogram_control = spectrogram_control
+        self.ecg_sequence_length: int = ecg_sequence_length
+        self.ecg_window_size: int = ecg_window_size
+        self.ecg_step: int = ecg_step
+        self.normalize: bool = normalize
+        self.fs: int = fs
+     
+        # Make labels
+        self.ecg_labels: List[torch.Tensor] = []
+        if self.class_type == 'binary':
+            ecg_leads_: List[torch.Tensor] = []
+            for index, ecg_label in enumerate(ecg_labels):
+                if ecg_label == "N":
+                    self.ecg_labels.append(0)
+                    ecg_leads_.append(self.ecg_leads[index])
+                else:
+                    self.ecg_labels.append(1)
+                    ecg_leads_.append(self.ecg_leads[index])
+            self.ecg_leads = ecg_leads_
+        if self.class_type == 'multi':
+            for ecg_label in ecg_labels:
+                if ecg_label == "N":
+                    self.ecg_labels.append(0)
+                elif ecg_label == "O":
+                    self.ecg_labels.append(1)
+                elif ecg_label == "A":
+                    self.ecg_labels.append(2)
+                elif ecg_label == "~":
+                    self.ecg_labels.append(3)
+                else:
+                    raise RuntimeError("Invalid label value detected!")
+        # Make spectrogram module
         
-        label = int(self.annotations[item, -1])
-        if label > 0:
-            label = 1  # 1 이상인 모든 값은 1로 변환(난 이진값 처리하니깐)
+        if self.spectrogram_control:
+            self.spectrogram_module: nn.Module = Spectrogram(n_fft=spectrogram_n_fft, win_length=spectrogram_win_length,
+                                                            hop_length=spectrogram_win_length // 2,
+                                                            power=spectrogram_power, normalized=spectrogram_normalized)
 
-        return signal, torch.tensor(label).long()
+    def __len__(self) -> int:
+        """
+        Returns the length of the dataset
+        :return: (int) Length of the dataset
+        """
+        return len(self.ecg_leads)
+
+    def __getitem__(self, item: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns a single instance of the dataset
+        :param item: (int) Index of the dataset instance to be returned
+        :return: (Tuple[torch.Tensor, torch.Tensor, torch.Tensor]) ECG lead, spectrogram, label
+        """
+        # Get ecg lead, label, and name
+        
+        spectrogram = []
+        spectrogram = torch.tensor(spectrogram)
+        ecg_lead = self.ecg_leads[item][:self.ecg_sequence_length]
+  
+        
+        ecg_label = self.ecg_labels[item]
+        # Apply augmentations
+        ecg_lead = self.augmentation_pipeline(ecg_lead)
+        # Normalize signal if utilized
+        if self.normalize:
+            ecg_lead = (ecg_lead - ecg_lead.mean()) / (ecg_lead.std() + 1e-08)
+        # Compute spectrogram of ecg_lead
+        
+        if self.spectrogram_control:
+            spectrogram = self.spectrogram_module(ecg_lead)
+            spectrogram = torch.log(spectrogram.abs().clamp(min=1e-08))
+            # Pad spectrogram to the desired shape
+            spectrogram = F.pad(spectrogram, pad=(0, self.spectrogram_length - spectrogram.shape[-1]),
+                                value=0., mode="constant").permute(1, 0)
+        # Pad ecg lead
+        ecg_lead = F.pad(ecg_lead, pad=(0, self.ecg_sequence_length - ecg_lead.shape[0]), value=0., mode="constant")
+        # Unfold ecg lead
+        if self.unfold:
+            ecg_lead = ecg_lead.unfold(dimension=-1, size=self.ecg_window_size, step=self.ecg_step)
+      
+
+        ecg_label = torch.tensor(ecg_label, dtype=torch.long)
+        return ecg_lead, ecg_label
+
+
+
+# rythm 기반 CinC2017용 증강
+class AugmentationPipeline(nn.Module):
+    """
+    This class implements an augmentation pipeline for ecg leads.
+    Inspired by: https://arxiv.org/pdf/2009.04398.pdf
+    """
+
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Constructor method
+        :param config: (Dict[str, Any]) Config dict
+        """
+        # Call super constructor
+        super(AugmentationPipeline, self).__init__()
+        # Save parameters
+        self.ecg_sequence_length: int = config["ecg_sequence_length"]
+        self.p_scale: float = config["p_scale"]
+        self.p_drop: float = config["p_drop"]
+        self.p_cutout: float = config["p_cutout"]
+        self.p_shift: float = config["p_shift"]
+        self.p_resample: float = config["p_resample"]
+        self.p_random_resample: float = config["p_random_resample"]
+        self.p_sine: float = config["p_sine"]
+        self.p_band_pass_filter: float = config["p_band_pass_filter"]
+        self.fs: int = config["fs"]
+        self.scale_range: Tuple[float, float] = config["scale_range"]
+        self.drop_rate = config["drop_rate"]
+        self.interval_length: float = config["interval_length"]
+        self.max_shift: int = config["max_shift"]
+        self.resample_factors: Tuple[float, float] = config["resample_factors"]
+        self.max_offset: float = config["max_offset"]
+        self.resampling_points: int = config["resampling_points"]
+        self.max_sine_magnitude: float = config["max_sine_magnitude"]
+        self.sine_frequency_range: Tuple[float, float] = config["sine_frequency_range"]
+        self.kernel: Tuple[float, ...] = config["kernel"]
+        self.fs: int = config["fs"]
+        self.frequencies: Tuple[float, float] = config["frequencies"]
+
+    def scale(self, ecg_lead: torch.Tensor, scale_range: Tuple[float, float] = (0.9, 1.1)) -> torch.Tensor:
+        """
+        Scale augmentation:  Randomly scaling data
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param scale_range: (Tuple[float, float]) Min and max scaling
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Get random scalar
+        random_scalar = torch.from_numpy(np.random.uniform(low=scale_range[0], high=scale_range[1], size=1)).float()
+        # Apply scaling
+        ecg_lead = random_scalar * ecg_lead
+        return ecg_lead
+
+    def drop(self, ecg_lead: torch.Tensor, drop_rate: float = 0.025) -> torch.Tensor:
+        """
+        Drop augmentation: Randomly missing signal values
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param drop_rate: (float) Relative number of samples to be dropped
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Estimate number of sample to be dropped
+        num_dropped_samples = int(ecg_lead.shape[-1] * drop_rate)
+        # Randomly drop samples
+        ecg_lead[..., torch.randperm(ecg_lead.shape[-1])[:max(1, num_dropped_samples)]] = 0.
+        return ecg_lead
+
+    def cutout(self, ecg_lead: torch.Tensor, interval_length: float = 0.1) -> torch.Tensor:
+        """
+        Cutout augmentation: Set a random interval signal to 0
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param interval_length: (float) Interval lenght to be cut out
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Estimate interval size
+        interval_size = int(ecg_lead.shape[-1] * interval_length)
+        # Get random starting index
+        index_start = torch.randint(low=0, high=ecg_lead.shape[-1] - interval_size, size=(1,))
+        # Apply cut out
+        ecg_lead[index_start:index_start + interval_size] = 0.
+        return ecg_lead
+
+    def shift(self, ecg_lead: torch.Tensor, ecg_sequence_length: int = 18000, max_shift: int = 4000) -> torch.Tensor:
+        """
+        Shift augmentation: Shifts the signal at random
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param ecg_sequence_length: (int) Fixed max length of sequence
+        :param max_shift: (int) Max applied shift
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Generate shift
+        shift = torch.randint(low=0, high=max_shift, size=(1,))
+        # Apply shift
+        ecg_lead = torch.cat([torch.zeros_like(ecg_lead)[..., :shift], ecg_lead], dim=-1)[:ecg_sequence_length]
+        return ecg_lead
+
+    def resample(self, ecg_lead: torch.Tensor, ecg_sequence_length: int = 18000,
+                 resample_factors: Tuple[float, float] = (0.8, 1.2)) -> torch.Tensor:
+        """
+        Resample augmentation: Resamples the ecg lead
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param ecg_sequence_length: (int) Fixed max length of sequence
+        :param resample_factor: (Tuple[float, float]) Min and max value for resampling
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Generate resampling factor
+        resample_factor = torch.from_numpy(
+            np.random.uniform(low=resample_factors[0], high=resample_factors[1], size=1)).float()
+        # Resample ecg lead
+        ecg_lead = F.interpolate(ecg_lead[None, None], size=int(resample_factor * ecg_lead.shape[-1]), mode="linear",
+                                 align_corners=False)[0, 0]
+        # Apply max length if needed
+        ecg_lead = ecg_lead[:ecg_sequence_length]
+        return ecg_lead
+
+    def random_resample(self, ecg_lead: torch.Tensor, ecg_sequence_length: int = 18000,
+                        max_offset: float = 0.03, resampling_points: int = 4) -> torch.Tensor:
+        """
+        Random resample augmentation: Randomly resamples the signal
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param ecg_sequence_length: (int) Fixed max length of sequence
+        :param max_offset: (float) Max resampling offsets between 0 and 1
+        :param resampling_points: (int) Initial resampling points
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Make coordinates for resampling
+        coordinates = 2. * (torch.arange(ecg_lead.shape[-1]).float() / (ecg_lead.shape[-1] - 1)) - 1
+        # Make offsets
+        offsets = F.interpolate(((2 * torch.rand(resampling_points) - 1) * max_offset)[None, None],
+                                size=ecg_lead.shape[-1], mode="linear", align_corners=False)[0, 0]
+        # Make grid
+        grid = torch.stack([coordinates + offsets, coordinates], dim=-1)[None, None].clamp(min=-1, max=1)
+        # Apply resampling
+        ecg_lead = F.grid_sample(ecg_lead[None, None, None], grid=grid, mode='bilinear', align_corners=False)[0, 0, 0]
+        # Apply max lenght if needed
+        ecg_lead = ecg_lead[:ecg_sequence_length]
+        return ecg_lead
+
+    def sine(self, ecg_lead: torch.Tensor, max_sine_magnitude: float = 0.2,
+             sine_frequency_range: Tuple[float, float] = (0.2, 1.), fs: int = 300) -> torch.Tensor:
+        """
+        Sine augmentation: Add a sine wave to the entire sample
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param max_sine_magnitude: (float) Max magnitude of sine to be added
+        :param sine_frequency_range: (Tuple[float, float]) Sine frequency rand
+        :param fs: (int) Sampling frequency
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Get sine magnitude
+        sine_magnitude = torch.from_numpy(np.random.uniform(low=0, high=max_sine_magnitude, size=1)).float()
+        # Get sine frequency
+        sine_frequency = torch.from_numpy(
+            np.random.uniform(low=sine_frequency_range[0], high=sine_frequency_range[1], size=1)).float()
+        # Make t vector
+        t = torch.arange(ecg_lead.shape[-1]) / float(fs)
+        # Make sine vector
+        sine = torch.sin(2 * math.pi * sine_frequency * t + torch.rand(1)) * sine_magnitude
+        # Apply sine
+        ecg_lead = sine + ecg_lead
+        return ecg_lead
+
+    def band_pass_filter(self, ecg_lead: torch.Tensor, frequencies: Tuple[float, float] = (0.2, 45.),
+                         fs: int = 300) -> torch.Tensor:
+        """
+        Low pass filter: Applies a band pass filter
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :param frequencies: (Tuple[float, float]) Frequencies of the band pass filter
+        :param fs: (int) Sample frequency
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Init filter
+        sos = signal.butter(10, frequencies, 'bandpass', fs=fs, output='sos')
+        ecg_lead = torch.from_numpy(signal.sosfilt(sos, ecg_lead.numpy()))
+        return ecg_lead
+
+    def forward(self, ecg_lead: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass applies augmentation to input tensor
+        :param ecg_lead: (torch.Tensor) ECG leads
+        :return: (torch.Tensor) ECG lead augmented
+        """
+        # Apply cut out augmentation
+        if random.random() <= self.p_cutout:
+            ecg_lead = self.cutout(ecg_lead, interval_length=self.interval_length)
+        # Apply drop augmentation
+        if random.random() <= self.p_drop:
+            ecg_lead = self.drop(ecg_lead, drop_rate=self.drop_rate)
+        # Apply random resample augmentation
+        if random.random() <= self.p_random_resample:
+            ecg_lead = self.random_resample(ecg_lead, ecg_sequence_length=self.ecg_sequence_length,
+                                            max_offset=self.max_offset, resampling_points=self.resampling_points)
+        # Apply resample augmentation
+        if random.random() <= self.p_resample:
+            ecg_lead = self.resample(ecg_lead, ecg_sequence_length=self.ecg_sequence_length,
+                                     resample_factors=self.resample_factors)
+        # Apply scale augmentation
+        if random.random() <= self.p_scale:
+            ecg_lead = self.scale(ecg_lead, scale_range=self.scale_range)
+        # Apply shift augmentation
+        if random.random() <= self.p_shift:
+            ecg_lead = self.shift(ecg_lead, ecg_sequence_length=self.ecg_sequence_length, max_shift=self.max_shift)
+        # Apply sine augmentation
+        if random.random() <= self.p_sine:
+            ecg_lead = self.sine(ecg_lead, max_sine_magnitude=self.max_sine_magnitude,
+                                 sine_frequency_range=self.sine_frequency_range, fs=self.fs)
+        # Apply low pass filter
+        if random.random() <= self.p_band_pass_filter:
+            ecg_lead = self.band_pass_filter(ecg_lead, frequencies=self.frequencies, fs=self.fs)
+        return ecg_lead
+    
+AUGMENTATION_PIPELINE_CONFIG_2C: Dict[str, Any] = {
+"p_scale": 0.4,
+"p_drop": 0.4,
+"p_cutout": 0.4,
+"p_shift": 0.4,
+"p_resample": 0.4,
+"p_random_resample": 0.4,
+"p_sine": 0.4,
+"p_band_pass_filter": 0.4,
+"scale_range": (0.85, 1.15),
+"drop_rate": 0.03,
+"interval_length": 0.05,
+"max_shift": 4000,
+"resample_factors": (0.8, 1.2),
+"max_offset": 0.075,
+"resampling_points": 12,
+"max_sine_magnitude": 0.3,
+"sine_frequency_range": (.2, 1.),
+"kernel": (1, 6, 15, 20, 15, 6, 1),
+"ecg_sequence_length": 18000,
+"fs": 300,
+"frequencies": (0.2, 45.)
+}
+
+
+
 
 
 # test 데이터로 정확도 측정 : 얘도 훈련때랑 똑같이 집어넣어야 한다.
@@ -226,7 +609,7 @@ def check_accuracy(loader, model):
             for t in range(timestep) : 
                 # timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
                 # out_fr += model(timestep_data) # 1회 순전파
-                encoded_data = encoder(x)
+                encoded_data = encoder(x).float()
                 out_fr += model(encoded_data)
         
         
@@ -286,8 +669,17 @@ def check_accuracy(loader, model):
 ########### 학습시작! ############
 
 # raw 데이터셋 가져오기
-train_dataset = MITLoader_MLP_binary(csv_file=train_path)
-test_dataset = MITLoader_MLP_binary(csv_file=test_path)
+ecg_leads_t, ecg_labels_t, fs_t, ecg_names_t = load_references(train_path)
+ecg_leads_v, ecg_labels_v, fs_v, ecg_names_v = load_references(test_path)
+training_split = list(range(len(ecg_leads_t)))
+validation_split = list(range(len(ecg_leads_v)))
+train_dataset = CinCLoader_MLP(ecg_leads=[ecg_leads_t[index] for index in training_split], class_type = 'binary',
+                                ecg_labels=[ecg_labels_t[index] for index in training_split], fs=fs_t,
+                                augmentation_pipeline= AugmentationPipeline(
+                                    AUGMENTATION_PIPELINE_CONFIG_2C))
+test_dataset = CinCLoader_MLP(ecg_leads=[ecg_leads_v[index] for index in validation_split],class_type = 'binary',
+                                ecg_labels=[ecg_labels_v[index] for index in validation_split], fs=fs_v,
+                                augmentation_pipeline=None)
 
 # 랜덤노이즈, 랜덤쉬프트는 일단 여기에 적어두기만 하고 구현은 미뤄두자.
 
@@ -339,9 +731,9 @@ for epoch in range(num_epochs):
 
 
     # 배치단위 실행
-    for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
+    for batch_idx, (datas, targets) in enumerate(tqdm(train_loader)):
         # 데이터 cuda에 갖다박기
-        data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
+        datas = datas.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
         targets = targets.to(device=device)
         
         label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
@@ -355,7 +747,7 @@ for epoch in range(num_epochs):
             # out_fr += model(timestep_data) # 1회 순전파
 
             # 맞겠지?
-            encoded_data = encoder(data)
+            encoded_data = encoder(datas).float()
             out_fr += model(encoded_data)
             
         
