@@ -297,7 +297,7 @@ def check_accuracy(loader, model):
             
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
 
-            weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
+            weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
             final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
             
             # 여기에도 total loss 찍기

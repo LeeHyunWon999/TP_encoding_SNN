@@ -1,4 +1,8 @@
-# 포아송 파일 그대로 복사해다가 burst로 딱 바꾼다.
+# 포아송 학습 : 근데 이제 뒤쪽을 1024짜리 2층으로 쌓은.
+# 히든레이어 집어넣는건 그대로 하되, 이번엔 아예 인코딩 레이어를 없애고 포아송 인코딩 함수만으로 정확도를 측정해보도록 한다.
+# 구조가 좀 바뀌어야 할 것이다. 가령 타임스텝은 입력데이터 길이가 아닌 50으로 두는 등.
+
+# 학습 시작 전에 json 파일 이용해서 하이퍼파라미터와 함께 집어넣고, 데이터로더 이용해서 지정된 횟수만큼 학습 지시하며 필요한 경우 텐서보드에 찍는다.
 
 # Imports
 import os
@@ -10,7 +14,7 @@ import torchvision.datasets as datasets  # 일반적인 데이터셋; 이거 아
 import torchvision.transforms as transforms  # 데이터 증강을 위한 일종의 변형작업이라 함
 from torch import optim  # SGD, Adam 등의 옵티마이저(그래디언트는 이쪽으로 가면 됩니다)
 from torch.optim.lr_scheduler import CosineAnnealingLR # 코사인스케줄러(옵티마이저 보조용)
-from torch import nn, Tensor  # 모든 DNN 모델들
+from torch import nn  # 모든 DNN 모델들
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
@@ -19,22 +23,25 @@ from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 import time # 텐서보드 폴더명에 쓸 시각정보 기록용
 import random # 랜덤시드 고정용
 
-
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
 import os
 import json
 import numpy as np
 
-
-
 # 얘는 SNN 학습이니까 당연히 있어야겠지? 특히 SNN 모델을 따로 만드려는 경우엔 뉴런 말고도 넣을 것이 많다.
 # import spikingjelly.activation_based as jelly
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
+# 이쪽에선 SNN 모델을 넣지 않고, 바로 jelly.layer.Linear로 바로 들어가는 것을 시도해본다. 이쪽이 오히려 학습 가능한 파라미터화 시키는 것이 아닐까? 아닌가? 해 봐야 안다.
+# from temp_from_GRU import TP_encoder_MIT as TP
+
+
+# import torchmetrics.functional as TF # 이걸로 메트릭 한번에 간편하게 할 수 있다던데?
+
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 상황에 맞춰 변경할 것
+os.environ["CUDA_VISIBLE_DEVICES"]= "3"  # 돌릴때마다 남는걸로 ㄱㄱ
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -73,14 +80,11 @@ scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
 timestep = json_data['timestep']
-burst_beta = json_data['burst_beta']
-burst_init_th = json_data['burst_init_th']
 random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
 need_bias = json_data['need_bias']
-
 
 # 랜덤시드 고정
 seed = random_seed
@@ -92,8 +96,6 @@ torch.cuda.manual_seed_all(seed)
 if deterministic:
 	torch.backends.cudnn.deterministic = True
 	torch.backends.cudnn.benchmark = False
- 
-
 
 # 일단은 텐서보드 그대로 사용
 # 텐서보드 선언(인자도 미리 뽑아두기; 나중에 json으로 바꿀 것!)
@@ -129,7 +131,6 @@ accuracy = torchmetrics.Accuracy(threshold=0.5, task='binary').to(device)
 # 참고 : 이것 외에도 에포크, Loss까지 찍어야 하니 참고할 것!
 earlystop_counter = early_stop
 min_valid_loss = float('inf')
-max_valid_auroc_macro = -float('inf')
 final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
@@ -141,21 +142,22 @@ class SNN_MLP(nn.Module):
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(num_encoders, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
+            layer.Linear(num_encoders, hidden_size, bias = bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
-        # SNN 리니어 : 인코더 히든 -> 히든2
-        self.hidden2 = nn.Sequential(
-            # layer.Flatten(),
-            layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
-            )
+        # 레이어 하나만으로 시도해보자.
+        # # SNN 리니어 : 인코더 히든 -> 히든2
+        # self.hidden2 = nn.Sequential(
+        #     # layer.Flatten(),
+        #     layer.Linear(hidden_size, hidden_size_2, bias = bias_option), # bias는 일단 기본값 True로 두기
+        #     neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+        #     )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size_2, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
@@ -163,48 +165,8 @@ class SNN_MLP(nn.Module):
     # 여기서 인코딩 레이어만 딱 빼면 된다.
     def forward(self, x: torch.Tensor):
         x = self.hidden(x)
-        x = self.hidden2(x)
+        # x = self.hidden2(x)
         return self.layer(x)
-
-
-
-
-
-# 인코딩용 burst 클래스
-class BURST(nn.Module):
-    def __init__(self, beta=2, init_th=0.0625, device='cuda') -> None:
-        super().__init__()
-        
-        self.beta = beta
-        self.init_th = init_th
-        self.device = device
-        
-        # self.th = torch.tensor([]).to(self.device)
-        # self.mem = torch.zeros(data_num_steps).to(self.device) # membrane potential initialization
-        
-    def burst_encode(self, data, t):
-        if t==0:
-            self.mem = data.clone().detach().to(self.device) # 이건 그대로
-            self.th = torch.ones(self.mem.shape, device=self.device) * self.init_th # 밖에 있는 코드 가져오느라 이렇게 된듯
-            
-        self.output = torch.zeros(self.mem.shape).to(self.device) # 0, 1 단위로 보내기 위해 이게 필요(아래 코드에 쓰는 용도)
-        
-        fire = (self.mem >= self.th) # 발화여부 확인
-        self.output = torch.where(fire, torch.ones(self.output.shape, device=self.device), self.output) # 발화됐으면 1, 아니면 0 놓는 녀석
-        out = torch.where(fire, self.th, torch.zeros(self.mem.shape, device=self.device)) # 얜 이제 잔차로 리셋하는 원래 동작 위해서 있는 녀석
-        self.mem -= out
-        
-        self.th = torch.where(fire, self.th * self.beta, torch.ones(self.th.shape, device=self.device)*self.init_th) # 연속발화시 2배로 늘리기, 아니면 다시 초기치로 이동
-
-        # 입력값 재설정하고 싶으면 쓰기 : 원본에서도 이건 그냥 있었으니 냅둘 것
-        if self.output.max() == 0:
-            self.mem = data.clone().detach().to(self.device)
-        
-        # 반환 : 스파이크 뜬 그 출력용 녀석 내보내기
-        return self.output.clone().detach()
-    
-    def forward(self, input:Tensor, t:int) -> Tensor:
-        return self.burst_encode(input, t)
 
 
 
@@ -257,29 +219,22 @@ def check_accuracy(loader, model):
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
             
-            label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
             
             
+            #timestep = x.shape[1] # SNN은 타임스텝이 필요함 -> 포아송 인코딩은 시간축을 새로 만들기 때문에 별개로 뒀음
             
-            
-            # 순전파
-            burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-            for t in range(timestep) :  # 원래 timestep 들어가야함
-                # print(data.shape)
-
-                # 맞겠지?
-                encoded_data = burst_encoder(x, t) # burst 인코딩, 축 맞게 잘 됐는지 확인 필요
-                # print(encoded_data.shape)
-                # input()
+            for t in range(timestep) : 
+                # timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+                # out_fr += model(timestep_data) # 1회 순전파
+                encoded_data = encoder(x)
                 out_fr += model(encoded_data)
-            
         
         
-            out_fr = out_fr / timestep
-            # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
+            out_fr = F.log_softmax(out_fr, dim=1)
             
-            loss = F.mse_loss(out_fr, label_onehot, reduction='none')
+            
+            loss = F.nll_loss(out_fr, y, reduction='none')
 
             weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니깐..?
             final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
@@ -321,8 +276,8 @@ def check_accuracy(loader, model):
     # 모델 다시 훈련으로 전환
     model.train()
 
-    # valid loss와 valid_auroc_macro를 반환한다. 이걸로 early stop 확인.
-    return valid_loss, valid_auroc_macro
+    # valid loss를 반환한다. 이걸로 early stop 확인.
+    return valid_loss
 
 
 
@@ -348,9 +303,14 @@ class_weight = torch.tensor(class_weight, device=device)
 model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, 
                 hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 
+# 포아송 인코딩이니 이녀석은 제낀다.
+# # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
+# manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
+# model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
+# model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
 
-# # 대신 포아송이니 포아송 인코더를 선언한다. -> burst이고, 초기화 문제도 있으니 여기가 아니라 배치 안쪽에서 정의할거임
-# encoder = encoding.PoissonEncoder()
+# 대신 포아송이니 포아송 인코더를 선언한다.
+encoder = encoding.PoissonEncoder()
 
 # 여기서 인코더 가중치를 고정시켜야 하나??
 # 모든 파라미터를 가져오되, 'requires_grad'가 False인 파라미터는 제외
@@ -385,29 +345,23 @@ for epoch in range(num_epochs):
         data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
         targets = targets.to(device=device)
         
-        label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
         
-        
-        # 순전파
-        burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
+        # 순전파 : SNN용으로 바꿔야 함
+        # timestep = data.shape[1] # SNN은 타임스텝이 필요함 -> 포아송이니 187 타임스텝으로 지정했음
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
         for t in range(timestep) :  # 원래 timestep 들어가야함
-            # print(data.shape)
+            # timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름 -> 포아송이면 이거 필요없지 않나?
+            # out_fr += model(timestep_data) # 1회 순전파
 
             # 맞겠지?
-            encoded_data = burst_encoder(data, t) # burst 인코딩, 축 맞게 잘 됐는지 확인 필요
-            # print(encoded_data.shape)
-            # input()
+            encoded_data = encoder(data)
             out_fr += model(encoded_data)
             
-            
-            
         
         
-        out_fr = out_fr / timestep
-        # print(out_fr) # 출력 firing rate, 잘 나오는 것으로 보임
-        # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
-        loss = F.mse_loss(out_fr, label_onehot, reduction='none') # 요소별로 loss를 구해야 해서 reduction을 넣는다는데..
+        out_fr = F.log_softmax(out_fr, dim=1)
+
+        loss = F.nll_loss(out_fr, targets, reduction='none') # 요소별로 loss를 구해야 해서 reduction을 넣는다는데..
         weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하고 배치 차원 확장
         final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
         # print(loss) # loss는 잘 나오는가? -> 아니 이거 MSE 써서 안좋아진건가?? 뭐지?
@@ -464,7 +418,7 @@ for epoch in range(num_epochs):
     writer.add_scalar('train_AUROC_weighted', train_auroc_weighted, epoch)
     writer.add_scalar('train_auprc', train_auprc, epoch)
 
-    valid_loss, valid_auroc_macro = check_accuracy(test_loader, model) # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
+    valid_loss = check_accuracy(test_loader, model) # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
 
     print('epoch ' + str(epoch) + ', valid loss : ' + str(valid_loss))
 

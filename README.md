@@ -37,6 +37,10 @@ batch size만큼 묶어서 보내야 하므로 여기에도 GRU의 2차원 인�
 - LIF 레이어 사용한 포아송 파일 생성 (decay_input : 입력값을 바로 tau로 decay시킬 것인가, false로 지정할 것; tau는 1/tau로 decay시키므로 timestep과 동기화시킬 것)
 - 내친김에 filter CNN도 LIF로 실험 돌려보기(정확도 적절히 잘 나오면 리듬도 시도할 것)
 
+'24. 10. 28. 버전5 업데이트(4)
+- 리듬 : 데이터로더에서 0~1 normalize 안되는 점 수정, 다른 모든 rhythm 파일에 적용
+
+
 
 ### 버전업마다 파일 변경할 점
 - config 파일 : model_name 변수명에 버전업
