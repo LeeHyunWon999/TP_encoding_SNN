@@ -324,8 +324,14 @@ class CinCLoader_MLP(data.Dataset):
         # Normalize signal if utilized
         if self.normalize:
             ecg_lead = (ecg_lead - ecg_lead.mean()) / (ecg_lead.std() + 1e-08)
-        # Compute spectrogram of ecg_lead
+
+
+        # 최소값과 최대값을 0과 1 사이로 정규화
+        ecg_min = ecg_lead.min()
+        ecg_max = ecg_lead.max()
+        ecg_lead = (ecg_lead - ecg_min) / (ecg_max - ecg_min + 1e-08)  # 최소값 ~ 최대값을 0~1 사이로 변환
         
+        # Compute spectrogram of ecg_lead
         if self.spectrogram_control:
             spectrogram = self.spectrogram_module(ecg_lead)
             spectrogram = torch.log(spectrogram.abs().clamp(min=1e-08))

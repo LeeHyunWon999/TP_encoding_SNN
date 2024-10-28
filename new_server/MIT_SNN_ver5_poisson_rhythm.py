@@ -51,7 +51,7 @@ import math
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "3"  # 돌릴때마다 남는걸로 ㄱㄱ
+os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 돌릴때마다 남는걸로 ㄱㄱ
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -324,8 +324,14 @@ class CinCLoader_MLP(data.Dataset):
         # Normalize signal if utilized
         if self.normalize:
             ecg_lead = (ecg_lead - ecg_lead.mean()) / (ecg_lead.std() + 1e-08)
+
+
+        # 최소값과 최대값을 0과 1 사이로 정규화
+        ecg_min = ecg_lead.min()
+        ecg_max = ecg_lead.max()
+        ecg_lead = (ecg_lead - ecg_min) / (ecg_max - ecg_min + 1e-08)  # 최소값 ~ 최대값을 0~1 사이로 변환
+
         # Compute spectrogram of ecg_lead
-        
         if self.spectrogram_control:
             spectrogram = self.spectrogram_module(ecg_lead)
             spectrogram = torch.log(spectrogram.abs().clamp(min=1e-08))

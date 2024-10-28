@@ -50,7 +50,7 @@ import math
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "0"   # 이쪽 서버는 GPU 4개임
+os.environ["CUDA_VISIBLE_DEVICES"]= "1"   # 이쪽 서버는 GPU 4개임
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -794,21 +794,21 @@ for epoch in range(num_epochs):
         timestep = datas.shape[1] # SNN은 타임스텝이 필요함
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
 
-        ###############################################################
-        ##### 모델이 잘 동작하긴 하는건지 의심스럽다.. 출력으로 확인 필요
-        torch.set_printoptions(threshold=torch.inf)
-        print(datas[10])
-        print(len(datas[10]))
+        # ###############################################################
+        # ##### 모델이 잘 동작하긴 하는건지 의심스럽다.. 출력으로 확인 필요
+        # torch.set_printoptions(threshold=torch.inf)
+        # print(datas[10])
+        # print(len(datas[10]))
 
-        # 저장
-        save_tensor = datas[10].cpu().numpy()
-        with open('tensor_output.txt', 'w') as f:
-            # NumPy 배열을 텍스트 형태로 저장
-            for item in save_tensor:
-                f.write(f"{item}\n")
-        input()
+        # # 저장
+        # save_tensor = datas[10].cpu().numpy()
+        # with open('tensor_output.txt', 'w') as f:
+        #     # NumPy 배열을 텍스트 형태로 저장
+        #     for item in save_tensor:
+        #         f.write(f"{item}\n")
+        # input()
 
-        ###############################################################
+        # ###############################################################
 
         
         # 필터연산 No.2. 
