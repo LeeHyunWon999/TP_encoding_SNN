@@ -35,6 +35,9 @@ def encode(json_data) :
     # 파일 형변환
     inputData = torch.tensor(inputData)
 
+    # 확률 변형 시도 : 50%, 25%
+    inputData = inputData * 0.25
+
     
     encoded_list = []
     
@@ -69,7 +72,7 @@ def encode(json_data) :
     print(encoded_array.shape)
     
     # npy로 저장
-    np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_timestep_Poisson.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
+    np.save(json_data["outputPath"] + fileName + '_' + str(json_data["dim"]) + '_timestep_Poisson_prob25.npy', encoded_array) # 일단 이거 되긴 하는지 확인 필요
 
 
 

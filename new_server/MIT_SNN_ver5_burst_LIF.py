@@ -1,4 +1,4 @@
-# 기존 CNN 필터 쪽에 IF 레이어 추가한 버전
+# 포아송 파일 그대로 복사해다가 burst로 딱 바꾼다.
 
 # Imports
 import os
@@ -10,7 +10,7 @@ import torchvision.datasets as datasets  # 일반적인 데이터셋; 이거 아
 import torchvision.transforms as transforms  # 데이터 증강을 위한 일종의 변형작업이라 함
 from torch import optim  # SGD, Adam 등의 옵티마이저(그래디언트는 이쪽으로 가면 됩니다)
 from torch.optim.lr_scheduler import CosineAnnealingLR # 코사인스케줄러(옵티마이저 보조용)
-from torch import nn  # 모든 DNN 모델들
+from torch import nn, Tensor  # 모든 DNN 모델들
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
@@ -19,25 +19,22 @@ from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 import time # 텐서보드 폴더명에 쓸 시각정보 기록용
 import random # 랜덤시드 고정용
 
+
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
 import os
 import json
 import numpy as np
 
+
+
 # 얘는 SNN 학습이니까 당연히 있어야겠지? 특히 SNN 모델을 따로 만드려는 경우엔 뉴런 말고도 넣을 것이 많다.
 # import spikingjelly.activation_based as jelly
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
-# 이쪽에선 SNN 모델을 넣지 않고, 바로 jelly.layer.Linear로 바로 들어가는 것을 시도해본다. 이쪽이 오히려 학습 가능한 파라미터화 시키는 것이 아닐까? 아닌가? 해 봐야 안다.
-# from temp_from_GRU import TP_encoder_MIT as TP
-
-
-# import torchmetrics.functional as TF # 이걸로 메트d릭 한번에 간편하게 할 수 있다던데?
-
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "0"   # 이쪽 서버는 GPU 4개임
+os.environ["CUDA_VISIBLE_DEVICES"]= "2"  # 상황에 맞춰 변경할 것
 device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
 print("Device :" + device) # 확인용
 # input() # 일시정지용
@@ -59,7 +56,7 @@ def loadJson() :
 json_data = loadJson()
 model_name = json_data['model_name']
 num_classes = json_data['num_classes']
-num_encoders = json_data['num_encoders']
+num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
 early_stop = json_data['early_stop']
 early_stop_enable = json_data['early_stop_enable']
 learning_rate = json_data['init_lr']
@@ -75,12 +72,9 @@ hidden_size_2 = json_data['hidden_size_2']
 scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
-encoder_type = json_data['encoder_type']
-encoder_tp_iter_repeat = json_data['encoder_tp_iter_repeat']
-encoder_filter_kernel_size = json_data['encoder_filter_kernel_size']
-encoder_filter_stride = json_data['encoder_filter_stride']
-encoder_filter_padding = json_data['encoder_filter_padding']
-encoder_filter_channel_size = json_data['encoder_filter_channel_size'] # CNN 스타일로 가려면 채널갯수로 깊게 분석해야 할 것이다.
+timestep = json_data['timestep']
+burst_beta = json_data['burst_beta']
+burst_init_th = json_data['burst_init_th']
 random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
@@ -100,8 +94,7 @@ torch.cuda.manual_seed_all(seed)
 if deterministic:
 	torch.backends.cudnn.deterministic = True
 	torch.backends.cudnn.benchmark = False
-
-
+ 
 
 
 # 일단은 텐서보드 그대로 사용
@@ -109,14 +102,14 @@ if deterministic:
 # 텐서보드 사용 유무를 json에서 설정하는 경우 눈치껏 조건문으로 비활성화!
 board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1로 두진 않겠지?
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
-                       + "_channel" + str(encoder_filter_channel_size) + "_hidden" + str(hidden_size)
+                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
                        + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
 
 # 체크포인트 위치도 상세히 갱신
 checkpoint_path += str(str(model_name) + "_" + board_class
-                       + "_channel" + str(encoder_filter_channel_size) + "_hidden" + str(hidden_size)
+                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
                        + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
@@ -141,83 +134,82 @@ min_valid_loss = float('inf')
 max_valid_auroc_macro = -float('inf')
 final_epoch = 0 # 마지막에 최종 에포크 확인용
 
-
-# 이제 복잡한 인코더들을 따로 여기에 정의해야 한다. 근데 이제 그냥 반복하는건 for문으로 꼬라박으면 되니까 필터연산하는 녀석만 있으면 될 듯?
-
-
-
-# 여기선 CNN 인코딩 방식을 취했다.
+# 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
+# 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, leak, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value, bias_option, reset_value_residual):
+    def __init__(self, num_classes, leak, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual):
         super().__init__()
         
-        # CNN 인코더 필터 : 이건 그냥 갈긴다.
-        self.cnn_encoders = nn.Conv1d(in_channels=1, out_channels=out_channels, kernel_size=kernel_size,
-                                      stride=stride, padding=padding, bias=bias_option) # 여기도 bias가 있다 함
-        
-        # CNN 인코더 IF뉴런 : 이거 추가해서 인코더 완성하기
-        self.cnn_IF_layer = neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
-                                            v_threshold=threshold_value, tau=leak, decay_input=False)
-        
-        # SNN 리니어 : 인코더 입력 -> 히든1
+        # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(out_channels, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
-                            v_threshold=threshold_value, tau=leak, decay_input=False),
+            layer.Linear(num_encoders, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
+            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
+                           v_threshold=threshold_value, tau=leak, decay_input=False),
             )
         
-        # 레이어 1개로 줄이는 버전 다시 학습 필요
-        # SNN 리니어 : 히든1 -> 히든2
-        # self.hidden_2 = nn.Sequential(
+        # SNN 리니어 : 인코더 히든 -> 히든2 (Neu+ 인퍼런스 버전에선 사용하지 않음)
+        # self.hidden2 = nn.Sequential(
         #     # layer.Flatten(),
         #     layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
-        #     neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
-        #                     v_threshold=threshold_value, tau=leak, decay_input=False),
+        #     neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
+        #                    v_threshold=threshold_value, tau=leak, decay_input=False),
         #     )
 
         # SNN 리니어 : 히든2 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
-                            v_threshold=threshold_value, tau=leak, decay_input=False),
+            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
+                           v_threshold=threshold_value, tau=leak, decay_input=False),
             )
-
-    def forward(self, x: torch.Tensor, encoding_save: bool = False):
-        results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
         
-        # CNN 필터는 채널 차원이 추가되므로 1번 쪽에 채널 차원 추가
-        x = x.unsqueeze(1)
-        # CNN 필터 통과시키기
-        x = self.cnn_encoders(x)
-        # print(x.shape)
-        timestep_size = x.shape[2]
-        # 근데 이제 이렇게 바꾼 데이터는 (배치, 채널, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
-        for i in range(timestep_size) : 
-            x_slice = x[:,:,i].squeeze() # 이러면 출력크기 차원이 사라지고 (배치, 채널)만 남겠지?
-            x_slice = self.cnn_IF_layer(x_slice) # CNN 필터 이후 IF 레이어 거치기
-            ##### 여기까지를 거쳐야 스파이크 트레인이 튀어나온다. (배치, 채널) 만큼의 값들이 출력크기만큼 쌓일 것이고, 이것이 전체 데이터 / 배치 만큼 쌓일 것이다.
-            ##### 이걸 테스트 데이터에 대해서 인코딩해야 한다는 뜻이 된다.
-            ##### 배치는 그대로 쌓아도 될듯?
-            #### valid일 때 인코딩 데이터를 따로 저장하도록 하면 될라나?
-            # if encoding_save : 
-            #     # IF레이어까지 거친 데이터의 shape 출력 후 출력 대상 변수에 배치 기준으로 쌓아야 한다.
-            #     encoded_spike = x_slice.shape
-            #     print(encoded_spike.shape)
+    
+    # 여기서 인코딩 레이어만 딱 빼면 된다.
+    def forward(self, x: torch.Tensor):
+        x = self.hidden(x)
+        # x = self.hidden2(x)
+        return self.layer(x)
 
-            x_slice = self.hidden(x_slice)
-            # x_slice = self.hidden_2(x_slice) # 3레이어로 변경 : Neu+의 4레이어가 동작하지 않음
-            x_slice = self.layer(x_slice)
-            results += x_slice  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
+
+
+
+
+# 인코딩용 burst 클래스
+class BURST(nn.Module):
+    def __init__(self, beta=2, init_th=0.0625, device='cuda') -> None:
+        super().__init__()
         
-        # # 리턴 : 인코딩 데이터를 따로 저장할 경우 이렇게 진행
-        # if encoding_save : 
-        #     return results / timestep_size, encoded_spike
-        return results / timestep_size
-    
-    
+        self.beta = beta
+        self.init_th = init_th
+        self.device = device
+        
+        # self.th = torch.tensor([]).to(self.device)
+        # self.mem = torch.zeros(data_num_steps).to(self.device) # membrane potential initialization
+        
+    def burst_encode(self, data, t):
+        if t==0:
+            self.mem = data.clone().detach().to(self.device) # 이건 그대로
+            self.th = torch.ones(self.mem.shape, device=self.device) * self.init_th # 밖에 있는 코드 가져오느라 이렇게 된듯
+            
+        self.output = torch.zeros(self.mem.shape).to(self.device) # 0, 1 단위로 보내기 위해 이게 필요(아래 코드에 쓰는 용도)
+        
+        fire = (self.mem >= self.th) # 발화여부 확인
+        self.output = torch.where(fire, torch.ones(self.output.shape, device=self.device), self.output) # 발화됐으면 1, 아니면 0 놓는 녀석
+        out = torch.where(fire, self.th, torch.zeros(self.mem.shape, device=self.device)) # 얜 이제 잔차로 리셋하는 원래 동작 위해서 있는 녀석
+        self.mem -= out
+        
+        self.th = torch.where(fire, self.th * self.beta, torch.ones(self.th.shape, device=self.device)*self.init_th) # 연속발화시 2배로 늘리기, 아니면 다시 초기치로 이동
 
+        # 입력값 재설정하고 싶으면 쓰기 : 원본에서도 이건 그냥 있었으니 냅둘 것
+        if self.output.max() == 0:
+            self.mem = data.clone().detach().to(self.device)
+        
+        # 반환 : 스파이크 뜬 그 출력용 녀석 내보내기
+        return self.output.clone().detach()
+    
+    def forward(self, input:Tensor, t:int) -> Tensor:
+        return self.burst_encode(input, t)
 
 
 
@@ -248,7 +240,7 @@ class MITLoader_MLP_binary(Dataset):
         return signal, torch.tensor(label).long()
 
 
-# test 데이터로 정확도 측정
+# test 데이터로 정확도 측정 : 얘도 훈련때랑 똑같이 집어넣어야 한다.
 def check_accuracy(loader, model):
 
     # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
@@ -272,44 +264,29 @@ def check_accuracy(loader, model):
             
             label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
             
-            # 순전파 : SNN용으로 바꿔야 함
-            timestep = x.shape[1] # SNN은 타임스텝이 필요함
             
+            
+            
+            # 순전파
+            burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
+            for t in range(timestep) :  # 원래 timestep 들어가야함
+                # print(data.shape)
+
+                # 맞겠지?
+                encoded_data = burst_encoder(x, t) # burst 인코딩, 축 맞게 잘 됐는지 확인 필요
+                # print(encoded_data.shape)
+                # input()
+                out_fr += model(encoded_data)
             
-            
-
-            # # 필터연산.
-            # # 전체 iter : (패딩추가된 크기 - (커널-스트라이드)) / 스트라이드.
-            # # 단, 이렇게 하는 경우 매 iter마다 제로패딩을 얼만큼 넣어야 하는지도 검사해야 할 것이다.
-            # # 타임스텝 앞뒤로 패딩 추가해서 계산해야 함..!
-            # paddinged_size = x.shape[1] + 2 * (encoder_filter_padding)
-            # paddinged_iter = (paddinged_size - (encoder_filter_kernel_size - encoder_filter_stride)) // encoder_filter_stride
-
-            # # 데이터의 앞뒤로 제로패딩을 추가한다.
-            # padded_data = F.pad(x, (encoder_filter_padding, encoder_filter_padding), "constant", 0)
-
-            # for t in range(paddinged_iter) :  # 원래 timestep 들어가야함
-            #     timestep_data = padded_data[:, t*encoder_filter_stride : t*encoder_filter_stride + encoder_filter_kernel_size]
-            #     # timestep_data = data[:, t:t+encoder_filter_kernel_size]  # 각 timestep마다 (batch_size, 1) 크기로 자름, 어차피 배치 빼도 1차원 값이 되니 unsqueeze(1) 필요 없을듯? 참고로 얘도 아님
-            #     out_fr += model(timestep_data) # 1회 순전파
-                
-                
-            # 필터연산 No.2. 
-            out_fr = model(x) # 앞으로도 그렇겠지만, 순전파꺼 넣는다고 x 말고 data 넣는 치명적 실수 하지 말 것 !!!
         
-
-
-                
-                
-            # 여기부턴 출력값 처리에 관한 내용이니 메커니즘 건들거면 여긴 안만져도 됨
-            
-            # out_fr = out_fr / timestep # 발화비율은 CNN필터 모델 안에서 계산되어 나온다.
+        
+            out_fr = out_fr / timestep
             # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
             
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
 
-            weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
+            weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니깐..?
             final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
             
             # 여기에도 total loss 찍기
@@ -349,7 +326,7 @@ def check_accuracy(loader, model):
     # 모델 다시 훈련으로 전환
     model.train()
 
-    # valid loss를 반환한다. 이걸로 early stop 확인.
+    # valid loss와 valid_auroc_macro를 반환한다. 이걸로 early stop 확인.
     return valid_loss, valid_auroc_macro
 
 
@@ -372,18 +349,13 @@ test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=Tr
 class_weight = torch.tensor(class_weight, device=device)
 
 
-# SNN 네트워크 초기화 : 이젠 상황따라 이것도 바꿔야 한다.
-# model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size,
-#                 hidden_size_2=hidden_size_2, kernel_size=encoder_filter_kernel_size).to(device=device) # 밑에꺼가 지금 하는 것
+# SNN 네트워크 초기화
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, leak=leak_decay, hidden_size=hidden_size, 
+                hidden_size_2=hidden_size_2, threshold_value=threshold_value, reset_value_residual=reset_value_residual, bias_option=need_bias).to(device=device)
 
-model = SNN_MLP(num_classes = num_classes, leak = leak_decay, hidden_size=hidden_size, hidden_size_2=hidden_size_2, 
-                out_channels=encoder_filter_channel_size, kernel_size=encoder_filter_kernel_size, reset_value_residual=reset_value_residual,
-                stride=encoder_filter_stride, padding=encoder_filter_padding, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 
-# 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
-# manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
-# model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
-# model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
+# # 대신 포아송이니 포아송 인코더를 선언한다. -> burst이고, 초기화 문제도 있으니 여기가 아니라 배치 안쪽에서 정의할거임
+# encoder = encoding.PoissonEncoder()
 
 # 여기서 인코더 가중치를 고정시켜야 하나??
 # 모든 파라미터를 가져오되, 'requires_grad'가 False인 파라미터는 제외
@@ -421,21 +393,25 @@ for epoch in range(num_epochs):
         label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
         
         
-        # 순전파 : 필터연산이므로 해당하는 만큼 자르는 스킬이 관건이 될 것
-        timestep = data.shape[1] # SNN은 타임스텝이 필요함
+        # 순전파
+        burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
+        for t in range(timestep) :  # 원래 timestep 들어가야함
+            # print(data.shape)
+
+            # 맞겠지?
+            encoded_data = burst_encoder(data, t) # burst 인코딩, 축 맞게 잘 됐는지 확인 필요
+            # print(encoded_data.shape)
+            # input()
+            out_fr += model(encoded_data)
+            
+            
+            
         
         
-        # 필터연산 No.2. 
-        # 기존에 들어온 데이터를 바로 CNN 필터로 돌려버린다. 대신 타임스텝 반복도 모델 안쪽에서 처리한다.
-        # 그렇게 나온 값을 인코더 제거된 리니어 모델에 넣는다.
-        out_fr = model(data)
-        
-                
-                
-        # 여기부턴 출력값 처리에 관한 내용이니 메커니즘 건들거면 여긴 안만져도 됨
-        
-        # out_fr = out_fr / timestep # CNN 필터는 이걸 알아서 내줘야 함
+        out_fr = out_fr / timestep
+        # print(out_fr) # 출력 firing rate, 잘 나오는 것으로 보임
+        # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
         loss = F.mse_loss(out_fr, label_onehot, reduction='none') # 요소별로 loss를 구해야 해서 reduction을 넣는다는데..
         weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하고 배치 차원 확장
         final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
@@ -539,6 +515,7 @@ for epoch in range(num_epochs):
 
 
 print("training finished; epoch :" + str(final_epoch))
+
 
 # 마지막엔 텐서보드 닫기
 writer.close()
