@@ -3,7 +3,7 @@
     "num_classes" : 2,
     "num_encoders" : 187,
     "early_stop" : 30,
-    "early_stop_enable" : true,
+    "early_stop_enable" : false,
     "init_lr" : 0.001,
     "batch_size" : 128,
     "num_epochs" : 150,

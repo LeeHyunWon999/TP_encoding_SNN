@@ -39,6 +39,7 @@ batch size만큼 묶어서 보내야 하므로 여기에도 GRU의 2차원 인�
 
 '24. 10. 28. 버전5 업데이트(4)
 - 리듬 : 데이터로더에서 0~1 normalize 안되는 점 수정, 다른 모든 rhythm 파일에 적용
+- poisson lowProbability 추가 : 원하는 확률값으로 낮추도록 데이터로더 수정, 나중에 필요시 config 파일 추가 예정이지만 일단 일반 poisson과 config 파일 공유
 
 
 
