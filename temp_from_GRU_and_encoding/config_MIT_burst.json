@@ -1,10 +1,10 @@
 {
-    "inputPath" : "/data/common/MIT-BIH/mitbih_test.csv",
-    "dim" : 64,
+    "inputPath" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv",
+    "dim" : 128,
     "leaky" : false,
     "threshold" : 1.0,
     "reset" : false,
     "reset_value" : 0.0,
     "adjustment_train" : false,
-    "outputPath" : "/data/leehyunwon/MIT-BIH_TP_encoding/"
+    "outputPath" : "/home/hschoi/data/leehyunwon/MIT-BIH_encoding/"
 }

@@ -84,6 +84,7 @@ random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
+leak_decay = json_data['leak_decay']
 need_bias = json_data['need_bias']
 
 # 랜덤시드 고정
@@ -136,36 +137,25 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option):
+    def __init__(self, num_classes, num_encoders, hidden_size, leak, threshold_value, bias_option):
         super().__init__()
         
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
-            # layer.Flatten(),
             layer.Linear(num_encoders, hidden_size, bias = bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value, tau=leak, decay_input=False),
             )
-        
-        # 레이어 하나만으로 시도해보자.
-        # # SNN 리니어 : 인코더 히든 -> 히든2
-        # self.hidden2 = nn.Sequential(
-        #     # layer.Flatten(),
-        #     layer.Linear(hidden_size, hidden_size_2, bias = bias_option), # bias는 일단 기본값 True로 두기
-        #     neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
-        #     )
 
-        # SNN 리니어 : 히든2 -> 출력
+        # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
-            # layer.Flatten(),
             layer.Linear(hidden_size, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value, tau=leak, decay_input=False),
             )
         
     
     # 여기서 인코딩 레이어만 딱 빼면 된다.
     def forward(self, x: torch.Tensor):
         x = self.hidden(x)
-        # x = self.hidden2(x)
         return self.layer(x)
 
 
@@ -194,7 +184,7 @@ class MITLoader_MLP_binary(Dataset):
         if label > 0:
             label = 1  # 1 이상인 모든 값은 1로 변환(난 이진값 처리하니깐)
         
-        # 포아송 인코딩의 확률값을 낮춘다.
+        # 확률값 따라 최대 50%, 25% 확률로 발화하도록 변환
         signal = signal * 0.25
 
         return signal, torch.tensor(label).long()
@@ -304,7 +294,7 @@ class_weight = torch.tensor(class_weight, device=device)
 
 # SNN 네트워크 초기화
 model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, 
-                hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
+                leak=leak_decay, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 
 # 포아송 인코딩이니 이녀석은 제낀다.
 # # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?

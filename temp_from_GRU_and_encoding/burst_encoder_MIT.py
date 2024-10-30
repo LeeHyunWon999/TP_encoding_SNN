@@ -8,26 +8,13 @@ import torch
 from torch import Tensor, nn
 from spikingjelly.activation_based import neuron
 
-# 똑같은 TP 인코더, 근데 이제 2차원용으로 차원 확장된 기본버전
-
-# 입력모듈용으로 리팩토링 필요 : 얘만의 json이 필요한 것이 아니기 때문이며 텐서로 바꾸는 등의 작업이 따로 필요하다.
+# burst 인코더
 
 
 # 인코딩용 뉴런 정의
 class BURST(nn.Module):
     def __init__(self, beta=2, init_th=0.0625, device='cuda') -> None:
         super().__init__()
-        """Burst coding at the time step
-
-        Args:
-            data (torch.Tensor): the data transfomed into range `[0, 1]`
-            mem (torch.Tensor): data transfomed into range `[0, 1]`
-            t (int): time step
-            beta (float, optional): . Defaults to 2.0.
-            th (float, optional): _description_. Defaults to 0.125.
-        """
-        
-        
         
         
         self.beta = beta
