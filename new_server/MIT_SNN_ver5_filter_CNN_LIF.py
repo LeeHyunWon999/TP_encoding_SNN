@@ -197,23 +197,13 @@ class SNN_MLP(nn.Module):
         for i in range(timestep_size) : 
             x_slice = x[:,:,i].squeeze() # 이러면 출력크기 차원이 사라지고 (배치, 채널)만 남겠지?
             x_slice = self.cnn_IF_layer(x_slice) # CNN 필터 이후 IF 레이어 거치기
-            ##### 여기까지를 거쳐야 스파이크 트레인이 튀어나온다. (배치, 채널) 만큼의 값들이 출력크기만큼 쌓일 것이고, 이것이 전체 데이터 / 배치 만큼 쌓일 것이다.
-            ##### 이걸 테스트 데이터에 대해서 인코딩해야 한다는 뜻이 된다.
-            ##### 배치는 그대로 쌓아도 될듯?
-            #### valid일 때 인코딩 데이터를 따로 저장하도록 하면 될라나?
-            # if encoding_save : 
-            #     # IF레이어까지 거친 데이터의 shape 출력 후 출력 대상 변수에 배치 기준으로 쌓아야 한다.
-            #     encoded_spike = x_slice.shape
-            #     print(encoded_spike.shape)
+            
 
             x_slice = self.hidden(x_slice)
             # x_slice = self.hidden_2(x_slice) # 3레이어로 변경 : Neu+의 4레이어가 동작하지 않음
             x_slice = self.layer(x_slice)
             results += x_slice  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
         
-        # # 리턴 : 인코딩 데이터를 따로 저장할 경우 이렇게 진행
-        # if encoding_save : 
-        #     return results / timestep_size, encoded_spike
         return results / timestep_size
     
     
