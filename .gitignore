@@ -1,2 +1,3 @@
 */tensorboard/
 *.h5
+*/tensorboard_legacy/
