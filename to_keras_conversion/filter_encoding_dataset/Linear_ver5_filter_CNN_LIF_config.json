@@ -5,7 +5,7 @@
     "early_stop" : 25,
     "early_stop_enable" : false,
     "init_lr" : 0.001,
-    "batch_size" : 256,
+    "batch_size" : 21891,
     "num_epochs" : 3,
     "train_path" : "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
     "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv", 
@@ -29,5 +29,6 @@
     "threshold_value" : 1.0,
     "reset_value_residual" : false,
     "leak_decay" : 2.0,
-    "need_bias" : false
+    "need_bias" : false, 
+    "outputPath" : "/home/hschoi/data/leehyunwon/MIT-BIH_encoding/"
 }
