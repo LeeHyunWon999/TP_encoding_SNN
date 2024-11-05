@@ -44,12 +44,6 @@ import math
 # import spikingjelly.activation_based as jelly
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
-# Cuda 써야겠지?
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= "0"  # 상황에 맞춰 변경할 것
-device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
-print("Device :" + device) # 확인용
-# input() # 일시정지용
 
 
 # 하이퍼파라미터와 사전 설정값들은 모두 .json 파일에 집어넣도록 한다.
@@ -66,6 +60,7 @@ def loadJson() :
         
 # 파일 읽어들이고 변수들 할당하기
 json_data = loadJson()
+cuda_gpu = json_data['cuda_gpu']
 model_name = json_data['model_name']
 num_classes = json_data['num_classes']
 num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
@@ -92,6 +87,14 @@ checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
 need_bias = json_data['need_bias']
+
+
+# Cuda 써야겠지?
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
+os.environ["CUDA_VISIBLE_DEVICES"]= str(cuda_gpu)  # 상황에 맞춰 변경할 것
+device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
+print("Device :" + device) # 확인용
+# input() # 일시정지용
 
 
 # 랜덤시드 고정

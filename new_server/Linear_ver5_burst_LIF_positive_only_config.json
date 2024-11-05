@@ -1,4 +1,5 @@
 {
+    "cuda_gpu" : 0,
     "model_name" : "SNN_MLP_ver5_burst_LIF_positive_only",
     "num_classes" : 2,
     "num_encoders" : 187,

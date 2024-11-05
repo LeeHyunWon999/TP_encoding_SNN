@@ -48,6 +48,7 @@ batch size만큼 묶어서 보내야 하므로 여기에도 GRU의 2차원 인�
     - 양수 초기화
     - train, valid 모두 음수 패널티 항 추가
     - config 파일에 음수패널티 계수 추가, .py에도 추가
+- ver5 모든 파일 gpu 번호도 config로 옮김
 
 
 

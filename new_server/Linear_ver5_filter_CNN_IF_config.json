@@ -1,4 +1,5 @@
 {
+    "cuda_gpu" : 0,
     "model_name" : "SNN_MLP_ver5_filter_CNN_IF",
     "num_classes" : 2,
     "num_encoders" : 64,
