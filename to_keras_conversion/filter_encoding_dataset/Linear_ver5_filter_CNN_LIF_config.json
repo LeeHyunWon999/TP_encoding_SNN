@@ -20,9 +20,9 @@
     "encoder_type" : "filter",
     "encoder_tp_iter_repeat" : 3,
     "encoder_filter_kernel_size" : 32,
-    "encoder_filter_stride" : 1,
+    "encoder_filter_stride" : 4,
     "encoder_filter_padding" : 0, 
-    "encoder_filter_channel_size" : 500,
+    "encoder_filter_channel_size" : 1000,
     "random_seed" : 999,
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
@@ -30,5 +30,6 @@
     "reset_value_residual" : false,
     "leak_decay" : 2.0,
     "need_bias" : false, 
+    "saved_model_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver5_filter_CNN_LIF_3layer_binary_channel1000_hidden1000_encoderGradTrue_early25_lr0.001_threshold1.0_2024_10_29_11_14_10_lastEpoch.pt",
     "outputPath" : "/home/hschoi/data/leehyunwon/MIT-BIH_encoding/"
 }

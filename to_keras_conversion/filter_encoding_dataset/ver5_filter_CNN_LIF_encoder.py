@@ -1,4 +1,5 @@
 # ver5_filter_CNN_LIF 버전으로 학습한 모델에서 필터 인코더와 IF레이어까지를 거친 activation 값만을 인코딩 데이터로 뽑아내기
+# 학습 시에 쓰던 config 파일을 그대로 가져올 순 없으므로, 파라미터는 직접 보고 옮길 것
 
 # Imports
 import os
@@ -84,6 +85,7 @@ threshold_value = json_data['threshold_value']
 reset_value_residual = json_data['reset_value_residual']
 leak_decay = json_data['leak_decay']
 need_bias = json_data['need_bias']
+saved_model_path = json_data['saved_model_path']
 outputPath = json_data['outputPath']
 
 
@@ -298,7 +300,7 @@ torch.autograd.set_detect_anomaly(True)
 # 이제 필터 인코딩을 진행한다.
 
 # 모델 상태 불러오기 (model_state_dict만 가져옴)
-checkpoint = torch.load('/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver5_filter_CNN_LIF_3layer_binary_channel1000_hidden1000_encoderGradTrue_early25_lr0.001_threshold1.0_2024_10_29_11_14_10_lastEpoch.pt')
+checkpoint = torch.load(saved_model_path)
 model.load_state_dict(checkpoint['model_state_dict'])
 
 model.eval()
@@ -329,6 +331,9 @@ with torch.no_grad():
         # activation_spikes를 (batch_size, timestep_size, channel) 형태로 쌓기
         activation_spikes = torch.stack(activation_spikes, dim=1)  # timestep_size 차원에서 쌓기
         encoded_data.append(activation_spikes)  # encoded_data에 추가
+        
+        # SNN 모델에서 이건 필수다.
+        functional.reset_net(model)
 
 # 모든 배치의 encoded_data를 하나의 텐서로 결합하여 (총 데이터 개수, timestep_size, channel) 형태로 만듦
 encoded_data = torch.cat(encoded_data, dim=0).cpu()
