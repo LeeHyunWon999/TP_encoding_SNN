@@ -311,7 +311,7 @@ def check_accuracy(loader, model):
             neg_weight_penalty = 0.0
             for name, param in model.named_parameters():
                 # 가중치 파라미터인지 확인하고 음수인 값들에 대해 패널티 계산
-                if 'weight' in name:
+                if 'weight' in name and 'cnn' not in name:
                     neg_weight_penalty += (param[param < 0] ** 2).sum()
             final_loss += neg_weight_penalty * negative_penalty_alpha
             
@@ -384,12 +384,14 @@ model = SNN_MLP(num_classes = num_classes, leak = leak_decay, hidden_size=hidden
                 stride=encoder_filter_stride, padding=encoder_filter_padding, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 
 # 양수 초기화 적용!
+# 근데 이제 필터 인코더 쪽은 Neu+에 들어가지 않으므로 이쪽은 일반적인 초기화 방식을 사용한다.
 for name, param in model.named_parameters():
         print("현재 레이어명 : ", name)
         # 가중치 파라미터인지 확인하고 초기화 적용
-        if 'weight' in name:
+        if 'weight' in name and 'cnn' not in name:
             nn.init.uniform_(param, a=0.0, b=1.0)
             print("레이어 하나의 양의 가중치 초기화 완료")
+
 
 # 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지? : 필터연산이라 필요없음
 # manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
@@ -456,7 +458,7 @@ for epoch in range(num_epochs):
         neg_weight_penalty = 0.0
         for name, param in model.named_parameters():
             # 가중치 파라미터인지 확인하고 음수인 값들에 대해 패널티 계산
-            if 'weight' in name:
+            if 'weight' in name and 'cnn' not in name:
                 neg_weight_penalty += (param[param < 0] ** 2).sum()
         final_loss += neg_weight_penalty * negative_penalty_alpha
 

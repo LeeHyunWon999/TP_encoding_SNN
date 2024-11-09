@@ -1,5 +1,5 @@
 {
-    "model_name" : "SNN_MLP_ver5_filter_CNN_LIF_3layer",
+    "model_name" : "SNN_MLP_ver5_filter_CNN_LIF_3layer_positive_only",
     "num_classes" : 2,
     "num_encoders" : 64,
     "early_stop" : 25,
@@ -20,9 +20,9 @@
     "encoder_type" : "filter",
     "encoder_tp_iter_repeat" : 3,
     "encoder_filter_kernel_size" : 32,
-    "encoder_filter_stride" : 4,
+    "encoder_filter_stride" : 1,
     "encoder_filter_padding" : 0, 
-    "encoder_filter_channel_size" : 1000,
+    "encoder_filter_channel_size" : 500,
     "random_seed" : 999,
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
