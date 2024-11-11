@@ -161,17 +161,17 @@ class SNN_MLP(nn.Module):
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
-        # SNN 리니어 : 인코더 히든 -> 히든2
-        self.hidden2 = nn.Sequential(
-            # layer.Flatten(),
-            layer.Linear(hidden_size, hidden_size_2, bias = bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
-            )
+        # # SNN 리니어 : 인코더 히든 -> 히든2
+        # self.hidden2 = nn.Sequential(
+        #     # layer.Flatten(),
+        #     layer.Linear(hidden_size, hidden_size_2, bias = bias_option), # bias는 일단 기본값 True로 두기
+        #     neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+        #     )
 
-        # SNN 리니어 : 히든2 -> 출력
+        # SNN 리니어 : 히든 -> 출력 (3레이어로 다시 변경)
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size_2, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
+            layer.Linear(hidden_size, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
             )
         
@@ -179,7 +179,7 @@ class SNN_MLP(nn.Module):
     # 여기서 인코딩 레이어만 딱 빼면 된다.
     def forward(self, x: torch.Tensor):
         x = self.hidden(x)
-        x = self.hidden2(x)
+        # x = self.hidden2(x)
         return self.layer(x)
 
 

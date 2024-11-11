@@ -274,8 +274,8 @@ def save_signals_histogram(model, x_min = None, x_max = None, file_path="default
 
 
 # 가중치 히스토그램 저장
-save_weights_histogram(model, x_min = -3, x_max = 3, file_path = "results/" + model_name + "_weights_histogram.png")
+save_weights_histogram(model, x_min = -0.1, x_max = 0.1, file_path = "results/" + model_name + "_weights_histogram.png")
 
 
 # 신호 히스토그램 저장
-save_signals_histogram(model, x_min = -40, x_max = 40, file_path = "results/" + model_name + "_signals_histogram.png")
+save_signals_histogram(model, x_min = -0.2, x_max = 0.2, file_path = "results/" + model_name + "_signals_histogram.png")

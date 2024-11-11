@@ -1,6 +1,6 @@
 {
-    "cuda_gpu" : 0,
-    "model_name" : "SNN_MLP_ver5_poisson_rhythm",
+    "cuda_gpu" : 1,
+    "model_name" : "SNN_MLP_ver5_poisson_rhythm_10000",
     "num_classes" : 2,
     "num_encoders" : 18000,
     "early_stop" : 30,
@@ -11,7 +11,7 @@
     "train_path" : "/home/hschoi/data/CinC_dataset/train/training2017",
     "test_path" : "/home/hschoi/data/CinC_dataset/valid", 
     "class_weight" : [1.0, 9.0], 
-    "hidden_size" : 1024,
+    "hidden_size" : 10000,
     "hidden_size_2" : 1024,
     "encoder_min" : 0.2,
     "encoder_max" : 2.0,
