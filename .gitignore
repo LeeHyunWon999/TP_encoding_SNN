@@ -1,3 +1,4 @@
 */tensorboard/
 *.h5
 */tensorboard_legacy/
+*/results/

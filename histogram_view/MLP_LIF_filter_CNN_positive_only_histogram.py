@@ -1,5 +1,4 @@
-# LIF burst : 가중치 제약 없이 학습된 burst의 weight, signal 히스토그램 찍기
-# 모델을 burst 쪽으로 바꾸고, 인코더 쪽을 신경써서 바꾸면 될 것이다.
+# LIF filter_CNN : 가중치 제약 없이 학습된 filter_CNN 모델의 weight, signal 히스토그램 찍기
 
 
 
@@ -28,7 +27,7 @@ import os
 import json
 import numpy as np
 
-# 얘는 SNN 학습이니까 당연히 있어야겠지?
+# SNN 학습
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
 # 히스토그램 찍기 위한 플롯
@@ -51,7 +50,7 @@ json_data = loadJson()
 cuda_gpu = json_data['cuda_gpu']
 model_name = json_data['model_name']
 num_classes = json_data['num_classes']
-num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
+num_encoders = json_data['num_encoders']
 early_stop = json_data['early_stop']
 early_stop_enable = json_data['early_stop_enable']
 learning_rate = json_data['init_lr']
@@ -67,9 +66,12 @@ hidden_size_2 = json_data['hidden_size_2']
 scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
-timestep = json_data['timestep']
-burst_beta = json_data['burst_beta']
-burst_init_th = json_data['burst_init_th']
+encoder_type = json_data['encoder_type']
+encoder_tp_iter_repeat = json_data['encoder_tp_iter_repeat']
+encoder_filter_kernel_size = json_data['encoder_filter_kernel_size']
+encoder_filter_stride = json_data['encoder_filter_stride']
+encoder_filter_padding = json_data['encoder_filter_padding']
+encoder_filter_channel_size = json_data['encoder_filter_channel_size'] # CNN 스타일로 가려면 채널갯수로 깊게 분석해야 할 것이다.
 random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
@@ -103,66 +105,54 @@ if deterministic:
 
 # 학습 코드의 모델 그대로 가져오기
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, leak, num_encoders, hidden_size, threshold_value, bias_option, reset_value_residual):
+    def __init__(self, num_classes, leak, hidden_size, out_channels, kernel_size, stride, padding, threshold_value, bias_option, reset_value_residual):
         super().__init__()
         
-        # SNN 리니어 : 인코더 입력 -> 히든
+        # CNN 인코더 필터 : 이건 그냥 갈긴다.
+        self.cnn_encoders = nn.Conv1d(in_channels=1, out_channels=out_channels, kernel_size=kernel_size,
+                                      stride=stride, padding=padding, bias=bias_option) # 여기도 bias가 있다 함
+        
+        # CNN 인코더 IF뉴런 : 이거 추가해서 인코더 완성하기
+        self.cnn_IF_layer = neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
+                                            v_threshold=threshold_value, tau=leak, decay_input=False)
+        
+        # SNN 리니어 : 인코더 입력 -> 히든1
         self.hidden = nn.Sequential(
-            layer.Linear(num_encoders, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
-                           v_threshold=threshold_value, tau=leak, decay_input=False),
+            # layer.Flatten(),
+            layer.Linear(out_channels, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
+            neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
+                            v_threshold=threshold_value, tau=leak, decay_input=False),
             )
-        
-        # SNN 리니어 : 히든2 -> 출력
+
+        # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
+            # layer.Flatten(),
             layer.Linear(hidden_size, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
-                           v_threshold=threshold_value, tau=leak, decay_input=False),
+            neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
+                            v_threshold=threshold_value, tau=leak, decay_input=False),
             )
-        
-    # 여기서 인코딩 레이어만 딱 빼면 된다.
+
     def forward(self, x: torch.Tensor):
-        x = self.hidden(x)
-        # x = self.hidden2(x)
-        return self.layer(x)
-
-
-# 인코딩용 burst 클래스
-class BURST(nn.Module):
-    def __init__(self, beta=2, init_th=0.0625, device='cuda') -> None:
-        super().__init__()
+        results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
         
-        self.beta = beta
-        self.init_th = init_th
-        self.device = device
-        
-        # self.th = torch.tensor([]).to(self.device)
-        # self.mem = torch.zeros(data_num_steps).to(self.device) # membrane potential initialization
-        
-    def burst_encode(self, data, t):
-        if t==0:
-            self.mem = data.clone().detach().to(self.device) # 이건 그대로
-            self.th = torch.ones(self.mem.shape, device=self.device) * self.init_th # 밖에 있는 코드 가져오느라 이렇게 된듯
+        # CNN 필터는 채널 차원이 추가되므로 1번 쪽에 채널 차원 추가
+        x = x.unsqueeze(1)
+        # CNN 필터 통과시키기
+        x = self.cnn_encoders(x)
+        # print(x.shape)
+        timestep_size = x.shape[2]
+        # 근데 이제 이렇게 바꾼 데이터는 (배치, 채널, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
+        for i in range(timestep_size) : 
+            x_slice = x[:,:,i].squeeze() # 이러면 출력크기 차원이 사라지고 (배치, 채널)만 남겠지?
+            x_slice = self.cnn_IF_layer(x_slice) # CNN 필터 이후 IF 레이어 거치기
             
-        self.output = torch.zeros(self.mem.shape).to(self.device) # 0, 1 단위로 보내기 위해 이게 필요(아래 코드에 쓰는 용도)
-        
-        fire = (self.mem >= self.th) # 발화여부 확인
-        self.output = torch.where(fire, torch.ones(self.output.shape, device=self.device), self.output) # 발화됐으면 1, 아니면 0 놓는 녀석
-        out = torch.where(fire, self.th, torch.zeros(self.mem.shape, device=self.device)) # 얜 이제 잔차로 리셋하는 원래 동작 위해서 있는 녀석
-        self.mem -= out
-        
-        self.th = torch.where(fire, self.th * self.beta, torch.ones(self.th.shape, device=self.device)*self.init_th) # 연속발화시 2배로 늘리기, 아니면 다시 초기치로 이동
 
-        # 입력값 재설정하고 싶으면 쓰기 : 원본에서도 이건 그냥 있었으니 냅둘 것
-        if self.output.max() == 0:
-            self.mem = data.clone().detach().to(self.device)
+            x_slice = self.hidden(x_slice)
+            # x_slice = self.hidden_2(x_slice) # 3레이어로 변경 : Neu+의 4레이어가 동작하지 않음
+            x_slice = self.layer(x_slice)
+            results += x_slice  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
         
-        # 반환 : 스파이크 뜬 그 출력용 녀석 내보내기
-        return self.output.clone().detach()
-    
-    def forward(self, input:Tensor, t:int) -> Tensor:
-        return self.burst_encode(input, t)
-
+        return results / timestep_size
     
     
 # 데이터 가져오는 알맹이 클래스
@@ -192,8 +182,9 @@ class MITLoader_MLP_binary(Dataset):
 
 
 # 모델 로드, 가중치도 같이 진행
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, leak=leak_decay, hidden_size=hidden_size, 
-                threshold_value=threshold_value, reset_value_residual=reset_value_residual, bias_option=need_bias).to(device=device)
+model = SNN_MLP(num_classes = num_classes, leak = leak_decay, hidden_size=hidden_size,
+                out_channels=encoder_filter_channel_size, kernel_size=encoder_filter_kernel_size, reset_value_residual=reset_value_residual,
+                stride=encoder_filter_stride, padding=encoder_filter_padding, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 checkpoint = torch.load(saved_model_path)
 model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -201,7 +192,7 @@ model.load_state_dict(checkpoint["model_state_dict"])
 test_dataset = MITLoader_MLP_binary(csv_file=test_path)
 test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-# 인코더 지정 : 버스트는 순전파 배치 안에서 선언해야 하므로 내릴 것!
+# 인코더 지정 : 여긴 filter_CNN, 인코더가 내장되어 있다. 따라서 필요 없다.
 encoder = None
 
 
@@ -250,10 +241,7 @@ def save_signals_histogram(model, x_min = None, x_max = None, file_path="default
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
             
-            encoder = BURST() # burst 인코더는 이 안에서 선언하여 초기화 유도
-            for t in range(timestep): 
-                encoded_data = encoder(x, t)  # burst encoding
-                _ = model(encoded_data)  # 모델 순전파
+            _ = model(x)  # 인코딩 없이 바로 모델 순전파
             
             functional.reset_net(model)  # 배치마다 모델 초기화
             break

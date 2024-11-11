@@ -1,5 +1,4 @@
-# LIF burst : 가중치 제약 없이 학습된 burst의 weight, signal 히스토그램 찍기
-# 모델을 burst 쪽으로 바꾸고, 인코더 쪽을 신경써서 바꾸면 될 것이다.
+# LIF 포아송 : 가중치 제약 없이 학습된 poisson의 weight, signal 히스토그램 찍기
 
 
 
@@ -13,7 +12,7 @@ import torchvision.datasets as datasets  # 일반적인 데이터셋; 이거 아
 import torchvision.transforms as transforms  # 데이터 증강을 위한 일종의 변형작업이라 함
 from torch import optim  # SGD, Adam 등의 옵티마이저(그래디언트는 이쪽으로 가면 됩니다)
 from torch.optim.lr_scheduler import CosineAnnealingLR # 코사인스케줄러(옵티마이저 보조용)
-from torch import nn, Tensor  # 모든 DNN 모델들
+from torch import nn  # 모든 DNN 모델들
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
@@ -68,16 +67,12 @@ scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
 timestep = json_data['timestep']
-burst_beta = json_data['burst_beta']
-burst_init_th = json_data['burst_init_th']
 random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
-reset_value_residual = json_data['reset_value_residual']
 leak_decay = json_data['leak_decay']
 need_bias = json_data['need_bias']
-negative_penalty_alpha = json_data['negative_penalty_alpha']
 saved_model_path = json_data['saved_model_path'] # 이게 여기서 따로 추가됨
 
 # Cuda 써야겠지?
@@ -103,66 +98,26 @@ if deterministic:
 
 # 학습 코드의 모델 그대로 가져오기
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, leak, num_encoders, hidden_size, threshold_value, bias_option, reset_value_residual):
+    def __init__(self, num_classes, num_encoders, hidden_size, leak, threshold_value, bias_option):
         super().__init__()
         
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
-            layer.Linear(num_encoders, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
-                           v_threshold=threshold_value, tau=leak, decay_input=False),
+            layer.Linear(num_encoders, hidden_size, bias = bias_option), # bias는 일단 기본값 True로 두기
+            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value, tau=leak, decay_input=False),
             )
-        
-        # SNN 리니어 : 히든2 -> 출력
+
+        # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
-            layer.Linear(hidden_size, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, 
-                           v_threshold=threshold_value, tau=leak, decay_input=False),
+            layer.Linear(hidden_size, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
+            neuron.LIFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value, tau=leak, decay_input=False),
             )
         
+    
     # 여기서 인코딩 레이어만 딱 빼면 된다.
     def forward(self, x: torch.Tensor):
         x = self.hidden(x)
-        # x = self.hidden2(x)
         return self.layer(x)
-
-
-# 인코딩용 burst 클래스
-class BURST(nn.Module):
-    def __init__(self, beta=2, init_th=0.0625, device='cuda') -> None:
-        super().__init__()
-        
-        self.beta = beta
-        self.init_th = init_th
-        self.device = device
-        
-        # self.th = torch.tensor([]).to(self.device)
-        # self.mem = torch.zeros(data_num_steps).to(self.device) # membrane potential initialization
-        
-    def burst_encode(self, data, t):
-        if t==0:
-            self.mem = data.clone().detach().to(self.device) # 이건 그대로
-            self.th = torch.ones(self.mem.shape, device=self.device) * self.init_th # 밖에 있는 코드 가져오느라 이렇게 된듯
-            
-        self.output = torch.zeros(self.mem.shape).to(self.device) # 0, 1 단위로 보내기 위해 이게 필요(아래 코드에 쓰는 용도)
-        
-        fire = (self.mem >= self.th) # 발화여부 확인
-        self.output = torch.where(fire, torch.ones(self.output.shape, device=self.device), self.output) # 발화됐으면 1, 아니면 0 놓는 녀석
-        out = torch.where(fire, self.th, torch.zeros(self.mem.shape, device=self.device)) # 얜 이제 잔차로 리셋하는 원래 동작 위해서 있는 녀석
-        self.mem -= out
-        
-        self.th = torch.where(fire, self.th * self.beta, torch.ones(self.th.shape, device=self.device)*self.init_th) # 연속발화시 2배로 늘리기, 아니면 다시 초기치로 이동
-
-        # 입력값 재설정하고 싶으면 쓰기 : 원본에서도 이건 그냥 있었으니 냅둘 것
-        if self.output.max() == 0:
-            self.mem = data.clone().detach().to(self.device)
-        
-        # 반환 : 스파이크 뜬 그 출력용 녀석 내보내기
-        return self.output.clone().detach()
-    
-    def forward(self, input:Tensor, t:int) -> Tensor:
-        return self.burst_encode(input, t)
-
     
     
 # 데이터 가져오는 알맹이 클래스
@@ -192,8 +147,8 @@ class MITLoader_MLP_binary(Dataset):
 
 
 # 모델 로드, 가중치도 같이 진행
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, leak=leak_decay, hidden_size=hidden_size, 
-                threshold_value=threshold_value, reset_value_residual=reset_value_residual, bias_option=need_bias).to(device=device)
+model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, 
+                leak=leak_decay, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
 checkpoint = torch.load(saved_model_path)
 model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -201,8 +156,8 @@ model.load_state_dict(checkpoint["model_state_dict"])
 test_dataset = MITLoader_MLP_binary(csv_file=test_path)
 test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-# 인코더 지정 : 버스트는 순전파 배치 안에서 선언해야 하므로 내릴 것!
-encoder = None
+# 인코더 지정 : 여긴 포아송
+encoder = encoding.PoissonEncoder()
 
 
 # 가중치 히스토그램 생성
@@ -250,9 +205,8 @@ def save_signals_histogram(model, x_min = None, x_max = None, file_path="default
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
             
-            encoder = BURST() # burst 인코더는 이 안에서 선언하여 초기화 유도
             for t in range(timestep): 
-                encoded_data = encoder(x, t)  # burst encoding
+                encoded_data = encoder(x)  # Poisson encoding
                 _ = model(encoded_data)  # 모델 순전파
             
             functional.reset_net(model)  # 배치마다 모델 초기화
@@ -286,8 +240,8 @@ def save_signals_histogram(model, x_min = None, x_max = None, file_path="default
 
 
 # 가중치 히스토그램 저장
-save_weights_histogram(model, x_min = -3, x_max = 3, file_path = "results/" + model_name + "_weights_histogram.png")
+save_weights_histogram(model, x_min = -200, x_max = 200, file_path = "results/" + model_name + "_weights_histogram.png")
 
 
 # 신호 히스토그램 저장
-save_signals_histogram(model, x_min = -40, x_max = 40, file_path = "results/" + model_name + "_signals_histogram.png")
+save_signals_histogram(model, x_min = -2400, x_max = 2400, file_path = "results/" + model_name + "_signals_histogram.png")
