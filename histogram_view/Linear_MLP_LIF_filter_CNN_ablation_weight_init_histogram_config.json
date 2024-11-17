@@ -1,12 +1,13 @@
 {
-    "model_name" : "SNN_MLP_ver5_filter_CNN_LIF_ablation_weight_init",
+    "cuda_gpu" : 0,
+    "model_name" : "MLP_LIF_filter_CNN_ablation_weight_init",
     "num_classes" : 2,
     "num_encoders" : 64,
     "early_stop" : 25,
     "early_stop_enable" : false,
     "init_lr" : 0.001,
-    "batch_size" : 21891,
-    "num_epochs" : 3,
+    "batch_size" : 256,
+    "num_epochs" : 250,
     "train_path" : "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
     "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv", 
     "class_weight" : [1.0, 4.0], 
@@ -29,7 +30,7 @@
     "threshold_value" : 1.0,
     "reset_value_residual" : false,
     "leak_decay" : 2.0,
-    "need_bias" : false, 
-    "saved_model_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver5_filter_CNN_LIF_ablation_weight_init_binary_channel1000_hidden1000_encoderGradTrue_early25_lr0.001_threshold1.0_2024_11_11_11_52_15_lastEpoch.pt",
-    "outputPath" : "/home/hschoi/data/leehyunwon/MIT-BIH_encoding/"
+    "need_bias" : false,
+    "negative_penalty_alpha" : 1,
+    "saved_model_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver5_filter_CNN_LIF_ablation_weight_init_binary_channel1000_hidden1000_encoderGradTrue_early25_lr0.001_threshold1.0_2024_11_11_11_52_15_lastEpoch.pt"
 }

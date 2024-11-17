@@ -138,12 +138,12 @@ class SNN_MLP(nn.Module):
         
         # 레이어 1개로 줄이는 버전 다시 학습 필요 (살려둬서 가중치가 저장되긴 했지만 학습되지 않은 녀석이므로 제외시킬 것!)
         # SNN 리니어 : 히든1 -> 히든2
-        self.hidden_2 = nn.Sequential(
-            # layer.Flatten(),
-            layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
-                            v_threshold=threshold_value, tau=leak, decay_input=False),
-            )
+        # self.hidden_2 = nn.Sequential(
+        #     # layer.Flatten(),
+        #     layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
+        #     neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
+        #                     v_threshold=threshold_value, tau=leak, decay_input=False),
+        #     )
 
         # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
