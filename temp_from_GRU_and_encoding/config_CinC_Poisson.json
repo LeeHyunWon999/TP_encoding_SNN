@@ -1,0 +1,10 @@
+{
+    "inputPath" : "/home/hschoi/data/CinC_dataset/rhythm_valid_normalize.csv",
+    "dim" : 128,
+    "leaky" : false,
+    "threshold" : 1.0,
+    "reset" : false,
+    "reset_value" : 0.0,
+    "adjustment_train" : false,
+    "outputPath" : "/home/hschoi/data/leehyunwon/MIT-BIH_encoding/"
+}

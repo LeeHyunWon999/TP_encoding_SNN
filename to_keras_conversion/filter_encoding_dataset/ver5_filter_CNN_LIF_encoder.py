@@ -137,13 +137,14 @@ class SNN_MLP(nn.Module):
             )
         
         # 레이어 1개로 줄이는 버전 다시 학습 필요 (살려둬서 가중치가 저장되긴 했지만 학습되지 않은 녀석이므로 제외시킬 것!)
+        ## 이미 2째 히든레이어가 선언된 경우, 인코딩 시에도 똑같이 선언되지 않으면 에러가 나므로 필요에 따라 더미 선언만 해두기
         # SNN 리니어 : 히든1 -> 히든2
-        # self.hidden_2 = nn.Sequential(
-        #     # layer.Flatten(),
-        #     layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
-        #     neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
-        #                     v_threshold=threshold_value, tau=leak, decay_input=False),
-        #     )
+        self.hidden_2 = nn.Sequential(
+            # layer.Flatten(),
+            layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
+            neuron.LIFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0,
+                            v_threshold=threshold_value, tau=leak, decay_input=False),
+            )
 
         # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
@@ -346,7 +347,7 @@ print(encoded_data.shape)
 
 
 # 이제 이걸 저장하기만 하면 된다..
-np.save(json_data["outputPath"] + 'mitbih_test_' + str(encoded_data.shape[1]) + '_channel_'
+np.save(json_data["outputPath"] + 'mitbih_test_' + model_name + '_' + str(encoded_data.shape[1]) + '_channel_'
         + str(encoded_data.shape[2]) + '_timestep_filterCNN.npy', encoded_data) # 일단 이거 되긴 하는지 확인 필요
 
 
