@@ -50,6 +50,10 @@ batch size만큼 묶어서 보내야 하므로 여기에도 GRU의 2차원 인�
     - config 파일에 음수패널티 계수 추가, .py에도 추가
 - ver5 모든 파일 gpu 번호도 config로 옮김
 
+'24. 12. 20. 버전6 추가
+- k-fold cross validation 코드 추가로 적용
+- 단, test 데이터를 위한 용도를 위한 경우 버전 5 복사해다가 파일명 뒤에 _final_test 붙여서 새로 만들 것
+
 
 
 ### 버전업마다 파일 변경할 점
