@@ -1,4 +1,7 @@
-# 포아송 파일 그대로 복사해다가 burst로 딱 바꾼다.
+# 수정사항이 꽤 있다.
+# config.json : 내부 파라미터 갯수 확 늘릴 것
+# CNN스러운 필터 만들어서 인코딩레이어 쌓기 시도 : 아마도 이건 모델에서 선택하도록 해야 할 것 같다; filter, tp, tp_iter 이렇게 3가지로.
+# valid loss, valid auroc 중 하나라도 업데이트되면 얼리스탑 갱신하도록 변경
 
 # Imports
 import os
@@ -10,15 +13,13 @@ import torchvision.datasets as datasets  # 일반적인 데이터셋; 이거 아
 import torchvision.transforms as transforms  # 데이터 증강을 위한 일종의 변형작업이라 함
 from torch import optim  # SGD, Adam 등의 옵티마이저(그래디언트는 이쪽으로 가면 됩니다)
 from torch.optim.lr_scheduler import CosineAnnealingLR # 코사인스케줄러(옵티마이저 보조용)
-from torch import nn, Tensor  # 모든 DNN 모델들
+from torch import nn  # 모든 DNN 모델들
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from tqdm import tqdm  # 진행도 표시용
 import torchmetrics # 평가지표 로깅용
 from typing import Callable # 람다식
 from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 import time # 텐서보드 폴더명에 쓸 시각정보 기록용
-import random # 랜덤시드 고정용
-
 
 # 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
@@ -26,12 +27,22 @@ import os
 import json
 import numpy as np
 
-
-
 # 얘는 SNN 학습이니까 당연히 있어야겠지? 특히 SNN 모델을 따로 만드려는 경우엔 뉴런 말고도 넣을 것이 많다.
 # import spikingjelly.activation_based as jelly
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
+# 이쪽에선 SNN 모델을 넣지 않고, 바로 jelly.layer.Linear로 바로 들어가는 것을 시도해본다. 이쪽이 오히려 학습 가능한 파라미터화 시키는 것이 아닐까? 아닌가? 해 봐야 안다.
+# from temp_from_GRU import TP_encoder_MIT as TP
+
+
+# import torchmetrics.functional as TF # 이걸로 메트릭 한번에 간편하게 할 수 있다던데?
+
+# Cuda 써야겠지?
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
+os.environ["CUDA_VISIBLE_DEVICES"]= "0"  # GPU 번호 지정
+device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
+print("Device :" + device) # 확인용
+# input() # 일시정지용
 
 
 # 하이퍼파라미터와 사전 설정값들은 모두 .json 파일에 집어넣도록 한다.
@@ -48,12 +59,10 @@ def loadJson() :
         
 # 파일 읽어들이고 변수들 할당하기
 json_data = loadJson()
-cuda_gpu = json_data['cuda_gpu']
 model_name = json_data['model_name']
 num_classes = json_data['num_classes']
-num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
+num_encoders = json_data['num_encoders']
 early_stop = json_data['early_stop']
-early_stop_enable = json_data['early_stop_enable']
 learning_rate = json_data['init_lr']
 batch_size = json_data['batch_size']
 num_epochs = json_data['num_epochs']
@@ -63,40 +72,16 @@ class_weight = json_data['class_weight']
 encoder_min = json_data['encoder_min']
 encoder_max = json_data['encoder_max']
 hidden_size = json_data['hidden_size']
-hidden_size_2 = json_data['hidden_size_2']
 scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
-timestep = json_data['timestep']
-burst_beta = json_data['burst_beta']
-burst_init_th = json_data['burst_init_th']
-random_seed = json_data['random_seed']
-checkpoint_save = json_data['checkpoint_save']
-checkpoint_path = json_data['checkpoint_path']
-threshold_value = json_data['threshold_value']
-need_bias = json_data['need_bias']
-
-
-# Cuda 써야겠지?
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
-os.environ["CUDA_VISIBLE_DEVICES"]= str(cuda_gpu)  # 상황에 맞춰 변경할 것
-device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
-print("Device :" + device) # 확인용
-# input() # 일시정지용
-
-
-
-# 랜덤시드 고정
-seed = random_seed
-deterministic = True
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
-if deterministic:
-	torch.backends.cudnn.deterministic = True
-	torch.backends.cudnn.benchmark = False
- 
+encoder_type = json_data['encoder_type']
+encoder_tp_iter_repeat = json_data['encoder_tp_iter_repeat']
+encoder_filter_kernel_size = json_data['encoder_filter_kernel_size']
+encoder_filter_input_channels = json_data['encoder_filter_input_channels']
+encoder_filter_output_channels = json_data['encoder_filter_output_channels']
+encoder_filter_stride = json_data['encoder_filter_stride']
+encoder_filter_padding = json_data['encoder_filter_padding']
 
 
 # 일단은 텐서보드 그대로 사용
@@ -106,21 +91,8 @@ board_class = 'binary' if num_classes == 2 else 'multi' # 클래스갯수를 1�
 writer = SummaryWriter(log_dir="./tensorboard/"+ str(model_name) + "_" + board_class
                        + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
                        + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
-                       + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
+                       + "_lr" + str(learning_rate)
                        + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
-
-# 체크포인트 위치도 상세히 갱신
-checkpoint_path += str(str(model_name) + "_" + board_class
-                       + "_encoders" + str(num_encoders) + "_hidden" + str(hidden_size)
-                       + "_encoderGrad" + str(encoder_requires_grad) + "_early" + str(early_stop)
-                       + "_lr" + str(learning_rate) + "_threshold" + str(threshold_value)
-                       + "_" + time.strftime('%Y_%m_%d_%H_%M_%S'))
-
-# 최종에포크 저장용
-lastpoint_path = checkpoint_path + "_lastEpoch.pt"
-
-# 체크포인트 확장자 마무리
-checkpoint_path += ".pt"
 
 # 텐서보드에 찍을 메트릭 여기서 정의
 f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
@@ -136,79 +108,51 @@ min_valid_loss = float('inf')
 max_valid_auroc_macro = -float('inf')
 final_epoch = 0 # 마지막에 최종 에포크 확인용
 
-# 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
-# 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
-class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option):
+
+# 이제 복잡한 인코더들을 따로 여기에 정의해야 한다. 근데 이제 그냥 반복하는건 for문으로 꼬라박으면 되니까 필터연산하는 녀석만 있으면 될 듯?
+
+
+
+# 이제 이것도 여러개 만들어야 한다. 일단 일반 tp 인코더부터.
+class SNN_MLP_tp(nn.Module):
+    def __init__(self, num_classes, num_encoders, hidden_size, repeat):
         super().__init__()
+
+        self.repeat = repeat
+
+        # SNN TP인코더 : 근데 이제 기존의 Linear 레이어 있는걸로 적절히 주물러서 쓰기?
+        self.encoders = nn.Sequential(
+            # layer.Flatten(), # 어차피 1차원 데이터인데 필요없지 않나?
+            layer.Linear(1, num_encoders), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
+            )
         
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(num_encoders, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
-            )
-        
-        # SNN 리니어 : 인코더 히든 -> 히든2
-        self.hidden2 = nn.Sequential(
-            # layer.Flatten(),
-            layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            layer.Linear(num_encoders, hidden_size), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
 
-        # SNN 리니어 : 히든2 -> 출력
+        # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size_2, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            layer.Linear(hidden_size, num_classes), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=None),
             )
-        
-    
-    # 여기서 인코딩 레이어만 딱 빼면 된다.
+
     def forward(self, x: torch.Tensor):
-        x = self.hidden(x)
-        x = self.hidden2(x)
-        return self.layer(x)
-
-
-
-
-
-# 인코딩용 burst 클래스
-class BURST(nn.Module):
-    def __init__(self, beta=2, init_th=0.0625, device='cuda') -> None:
-        super().__init__()
+        # x = self.encoders(x)
+        # x = self.hidden(x)
+        # return self.layer(x)
+        outputs = 0.
+        for _ in range(self.repeat) : 
+            encoded = self.encoders(x)
+            hidden_output = self.hidden(encoded)
+            output = self.layer(hidden_output)
+            outputs += output
         
-        self.beta = beta
-        self.init_th = init_th
-        self.device = device
-        
-        # self.th = torch.tensor([]).to(self.device)
-        # self.mem = torch.zeros(data_num_steps).to(self.device) # membrane potential initialization
-        
-    def burst_encode(self, data, t):
-        if t==0:
-            self.mem = data.clone().detach().to(self.device) # 이건 그대로
-            self.th = torch.ones(self.mem.shape, device=self.device) * self.init_th # 밖에 있는 코드 가져오느라 이렇게 된듯
-            
-        self.output = torch.zeros(self.mem.shape).to(self.device) # 0, 1 단위로 보내기 위해 이게 필요(아래 코드에 쓰는 용도)
-        
-        fire = (self.mem >= self.th) # 발화여부 확인
-        self.output = torch.where(fire, torch.ones(self.output.shape, device=self.device), self.output) # 발화됐으면 1, 아니면 0 놓는 녀석
-        out = torch.where(fire, self.th, torch.zeros(self.mem.shape, device=self.device)) # 얜 이제 잔차로 리셋하는 원래 동작 위해서 있는 녀석
-        self.mem -= out
-        
-        self.th = torch.where(fire, self.th * self.beta, torch.ones(self.th.shape, device=self.device)*self.init_th) # 연속발화시 2배로 늘리기, 아니면 다시 초기치로 이동
-
-        # 입력값 재설정하고 싶으면 쓰기 : 원본에서도 이건 그냥 있었으니 냅둘 것
-        if self.output.max() == 0:
-            self.mem = data.clone().detach().to(self.device)
-        
-        # 반환 : 스파이크 뜬 그 출력용 녀석 내보내기
-        return self.output.clone().detach()
-    
-    def forward(self, input:Tensor, t:int) -> Tensor:
-        return self.burst_encode(input, t)
+        return outputs
 
 
 
@@ -239,7 +183,7 @@ class MITLoader_MLP_binary(Dataset):
         return signal, torch.tensor(label).long()
 
 
-# test 데이터로 정확도 측정 : 얘도 훈련때랑 똑같이 집어넣어야 한다.
+# test 데이터로 정확도 측정
 def check_accuracy(loader, model):
 
     # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
@@ -257,27 +201,21 @@ def check_accuracy(loader, model):
     print("validation 진행중...")
 
     with  torch.no_grad():
-        for x, y in loader:         ############### train쪽에서 코드 복붙 시 (data, targets) 가 (x, y) 로 바뀌는 것에 유의할 것!!!!!!!!###############
+        for x, y in loader:
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
             
             label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
             
+            # 순전파 : SNN용으로 바꿔야 함
+            timestep = x.shape[1] # SNN은 타임스텝이 필요함
             
-            
-            
-            # 순전파
-            burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-            for t in range(timestep) :  # 원래 timestep 들어가야함
-                # print(data.shape)
-
-                # 맞겠지?
-                encoded_data = burst_encoder(x, t) # burst 인코딩, 축 맞게 잘 됐는지 확인 필요
-                # print(encoded_data.shape)
-                # input()
-                out_fr += model(encoded_data)
-            
+            # out_fr_list = []  # 출력 발화빈도를 리스트로 저장
+            for t in range(timestep) : 
+                timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+                out_fr += model(timestep_data) # 1회 순전파
+                # out_fr_list.append(model(timestep_data))  # 각 타임스텝의 출력을 리스트에 저장
         
         
             out_fr = out_fr / timestep
@@ -285,7 +223,7 @@ def check_accuracy(loader, model):
             
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
 
-            weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니깐..?
+            weighted_loss = loss * class_weight[targets].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
             final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
             
             # 여기에도 total loss 찍기
@@ -325,7 +263,7 @@ def check_accuracy(loader, model):
     # 모델 다시 훈련으로 전환
     model.train()
 
-    # valid loss와 valid_auroc_macro를 반환한다. 이걸로 early stop 확인.
+    # valid loss를 반환한다. 이걸로 early stop 확인.
     return valid_loss, valid_auroc_macro
 
 
@@ -348,13 +286,13 @@ test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=Tr
 class_weight = torch.tensor(class_weight, device=device)
 
 
-# SNN 네트워크 초기화
-model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, 
-                hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias).to(device=device)
+# SNN 네트워크 초기화 : 이젠 상황따라 이것도 바꿔야 한다.
+model = SNN_MLP_tp(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size, repeat=encoder_tp_iter_repeat).to(device=device)
 
-
-# # 대신 포아송이니 포아송 인코더를 선언한다. -> burst이고, 초기화 문제도 있으니 여기가 아니라 배치 안쪽에서 정의할거임
-# encoder = encoding.PoissonEncoder()
+# 그리고 여기에서 내부 가중치 값을 임의로 바꿀 수 있단 거겠지?
+manual_weights = torch.linspace(encoder_min,encoder_max,steps=num_encoders).view(1,-1).to(device).transpose(1,0) # 아니 GPGPT야 이런건 어떻게 알고 찾아내주는거니
+model.encoders[0].weight = nn.Parameter(manual_weights, requires_grad=encoder_requires_grad) # 가중치 고정!
+model.encoders[0].bias.data.fill_(0.0) # bias 초기화해주는 녀석이라는데.. 일단 GPT가 제시했으니 써봄, 온전히 가중치만 보게 하니 의미있을 것 같기도 하고
 
 # 여기서 인코더 가중치를 고정시켜야 하나??
 # 모든 파라미터를 가져오되, 'requires_grad'가 False인 파라미터는 제외
@@ -392,19 +330,12 @@ for epoch in range(num_epochs):
         label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
         
         
-        # 순전파
-        burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
+        # 순전파 : SNN용으로 바꿔야 함
+        timestep = data.shape[1] # SNN은 타임스텝이 필요함
         out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
         for t in range(timestep) :  # 원래 timestep 들어가야함
-            # print(data.shape)
-
-            # 맞겠지?
-            encoded_data = burst_encoder(data, t) # burst 인코딩, 축 맞게 잘 됐는지 확인 필요
-            # print(encoded_data.shape)
-            # input()
-            out_fr += model(encoded_data)
-            
-            
+            timestep_data = data[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
+            out_fr += model(timestep_data) # 1회 순전파(내부에서 지정된 repeat만큼 반복하여 그 합계를 바로 여기에 내놓음)
             
         
         
@@ -472,41 +403,18 @@ for epoch in range(num_epochs):
 
     print('epoch ' + str(epoch) + ', valid loss : ' + str(valid_loss))
 
-    # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
-    if early_stop_enable :
-        if valid_loss < min_valid_loss : 
-            min_valid_loss = valid_loss
-            earlystop_counter = early_stop
-            if checkpoint_save : 
-                print("best performance, saving..")
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': valid_loss,
-                    }, checkpoint_path)
-        else : 
-            earlystop_counter -= 1
-            if earlystop_counter == 0 : # train epoch 빠져나오며 최종 모델 저장
-                final_epoch = epoch
-                print("last epoch model saving..")
-                torch.save({
-                    'epoch': final_epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': valid_loss,
-                    }, lastpoint_path)
-                break # train epoch를 빠져나옴
+    # 얼리스탑 : valid_loss와 valid_auroc_macro를 동시에 비교하며 진행
+    if valid_loss < min_valid_loss : 
+        min_valid_loss = valid_loss
+        earlystop_counter = early_stop
+    elif valid_auroc_macro > max_valid_auroc_macro : 
+        max_valid_auroc_macro = valid_auroc_macro
+        early_stop_counter = early_stop
     else : 
-        final_epoch = epoch
-        if epoch == num_epochs - 1 : # 얼리스탑과 별개로 최종 모델 저장
-            print("last epoch model saving..")
-            torch.save({
-                'epoch': final_epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': valid_loss,
-                }, lastpoint_path)
+        earlystop_counter -= 1
+        if earlystop_counter == 0 : 
+            final_epoch = epoch
+            break # train epoch를 빠져나옴
 
     
 

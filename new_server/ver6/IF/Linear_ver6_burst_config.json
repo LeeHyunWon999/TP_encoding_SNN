@@ -1,6 +1,6 @@
 {
-    "cuda_gpu" : 0,
-    "model_name" : "SNN_MLP_ver6_poisson",
+    "cuda_gpu" : 1,
+    "model_name" : "SNN_MLP_ver6_burst",
     "num_classes" : 2,
     "num_encoders" : 187,
     "early_stop" : 30,
@@ -19,6 +19,8 @@
     "scheduler_eta_min" : 0.00001,
     "encoder_requires_grad" : true,
     "timestep" : 128,
+    "burst_beta" : 2.0,
+    "burst_init_th" : 0.125,
     "random_seed" : 999,
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
