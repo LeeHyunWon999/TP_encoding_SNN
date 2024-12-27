@@ -2,3 +2,5 @@
 *.h5
 */tensorboard_legacy/
 */results/
+*.csv
+*.txt
