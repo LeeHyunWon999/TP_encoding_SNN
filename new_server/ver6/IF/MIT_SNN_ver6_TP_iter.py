@@ -151,10 +151,10 @@ class SNN_MLP(nn.Module):
             x_slice = x[:,i].squeeze().unsqueeze(1) # 슬라이스 진행 후 256, 1 크기가 되도록 shape 수정
             # 반복하여 집어넣는다.
             for j in range(repeat) : 
-                x_slice = self.encoder(x_slice)
-                x_slice = self.hidden(x_slice)
-                x_slice = self.layer(x_slice)
-                results += x_slice  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
+                x_slice_1 = self.encoder(x_slice)
+                x_slice_2 = self.hidden(x_slice_1)
+                x_slice_3 = self.layer(x_slice_2)
+                results += x_slice_3  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
         # results = torch.stack(results, dim=0) # 텐서로 바꾸기
         return results / timestep_size
     

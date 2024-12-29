@@ -1,8 +1,4 @@
-# 포아송 학습 : 근데 이제 뒤쪽을 1024짜리 2층으로 쌓은.
-# 히든레이어 집어넣는건 그대로 하되, 이번엔 아예 인코딩 레이어를 없애고 포아송 인코딩 함수만으로 정확도를 측정해보도록 한다.
-# 구조가 좀 바뀌어야 할 것이다. 가령 타임스텝은 입력데이터 길이가 아닌 50으로 두는 등.
-
-# 학습 시작 전에 json 파일 이용해서 하이퍼파라미터와 함께 집어넣고, 데이터로더 이용해서 지정된 횟수만큼 학습 지시하며 필요한 경우 텐서보드에 찍는다.
+# TP_iter과 같은 동작이지만 너무 오래 걸리는 관계로 GPU 자원 별개로 할당할 수 있도록 cv 코드 재작성
 
 # Imports
 import os
@@ -35,11 +31,6 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 from sklearn.model_selection import KFold # cross-validation용
 
-# 이쪽에선 SNN 모델을 넣지 않고, 바로 jelly.layer.Linear로 바로 들어가는 것을 시도해본다. 이쪽이 오히려 학습 가능한 파라미터화 시키는 것이 아닐까? 아닌가? 해 봐야 안다.
-# from temp_from_GRU import TP_encoder_MIT as TP
-
-
-
 
 
 # 하이퍼파라미터와 사전 설정값들은 모두 .json 파일에 집어넣도록 한다.
@@ -59,7 +50,7 @@ json_data = loadJson()
 cuda_gpu = json_data['cuda_gpu']
 model_name = json_data['model_name']
 num_classes = json_data['num_classes']
-num_encoders = json_data['num_encoders'] # 편의상 이녀석을 MIT-BIH 길이인 187로 지정하도록 한다.
+num_encoders = json_data['num_encoders']
 early_stop = json_data['early_stop']
 early_stop_enable = json_data['early_stop_enable']
 learning_rate = json_data['init_lr']
@@ -75,7 +66,8 @@ hidden_size_2 = json_data['hidden_size_2']
 scheduler_tmax = json_data['scheduler_tmax']
 scheduler_eta_min = json_data['scheduler_eta_min']
 encoder_requires_grad = json_data['encoder_requires_grad']
-timestep = json_data['timestep']
+encoder_type = json_data['encoder_type']
+encoder_tp_iter_repeat = json_data['encoder_tp_iter_repeat']
 random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
@@ -83,6 +75,7 @@ threshold_value = json_data['threshold_value']
 reset_value_residual = json_data['reset_value_residual']
 need_bias = json_data['need_bias']
 k_folds = json_data['k_folds']
+fold_num = json_data['fold_num']
 
 
 # Cuda 써야겠지?
@@ -121,40 +114,53 @@ earlystop_counter = early_stop
 min_valid_loss = float('inf')
 final_epoch = 0 # 마지막에 최종 에포크 확인용
 
-# 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
-# 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
+
+# 여기선 CNN 인코딩 방식을 취했다.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual):
+    def __init__(self, num_classes, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual):
         super().__init__()
         
-        # SNN 리니어 : 인코더 입력 -> 히든
+        # SNN 인코더 : 채널 크기만큼 확장하기
+        self.encoder = nn.Sequential(
+            # layer.Flatten(),
+            layer.Linear(1, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
+            )
+
+        # SNN 리니어 : 인코더 출력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(num_encoders, hidden_size, bias = bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
+            layer.Linear(hidden_size, hidden_size_2, bias=bias_option), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
         
-        # 레이어 하나만으로 시도해보자.
-        # # SNN 리니어 : 인코더 히든 -> 히든2
-        # self.hidden2 = nn.Sequential(
-        #     # layer.Flatten(),
-        #     layer.Linear(hidden_size, hidden_size_2, bias = bias_option), # bias는 일단 기본값 True로 두기
-        #     neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
-        #     )
 
-        # SNN 리니어 : 히든2 -> 출력
+        # SNN 리니어 : 히든 -> 출력
         self.layer = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(hidden_size, num_classes, bias = bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
+            layer.Linear(hidden_size_2, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
+            neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
+
+    def forward(self, x: torch.Tensor, repeat):
+        results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
+        # print(x.shape) # (배치크기, 187) 모양임
         
+        timestep_size = x.shape[1] # 187 timestep을 만들어야 함
+        # 근데 이제 이렇게 바꾼 데이터는 (배치, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
+        for i in range(timestep_size) : 
+            x_slice = x[:,i].squeeze().unsqueeze(1) # 슬라이스 진행 후 256, 1 크기가 되도록 shape 수정
+            # 반복하여 집어넣는다.
+            for j in range(repeat) : 
+                x_slice_1 = self.encoder(x_slice)
+                x_slice_2 = self.hidden(x_slice_1)
+                x_slice_3 = self.layer(x_slice_2)
+                results += x_slice_3  # 결과를 리스트에 저장(출력발화값은 전부 더하는 식으로)
+        # results = torch.stack(results, dim=0) # 텐서로 바꾸기
+        return results / timestep_size
     
-    # 여기서 인코딩 레이어만 딱 빼면 된다.
-    def forward(self, x: torch.Tensor):
-        x = self.hidden(x)
-        # x = self.hidden2(x)
-        return self.layer(x)
+    
+
 
 
 
@@ -185,7 +191,7 @@ class MITLoader_MLP_binary(Dataset):
         return signal, torch.tensor(label).long()
 
 
-# test 데이터로 정확도 측정 : 얘도 훈련때랑 똑같이 집어넣어야 한다.
+# test 데이터로 정확도 측정
 def check_accuracy(loader, model, writer):
 
     # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
@@ -209,22 +215,24 @@ def check_accuracy(loader, model, writer):
             
             label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
             
-            #timestep = x.shape[1] # SNN은 타임스텝이 필요함 -> 포아송 인코딩은 시간축을 새로 만들기 때문에 별개로 뒀음
-            
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
-            for t in range(timestep) : 
-                # timestep_data = x[:, t].unsqueeze(1)  # 각 timestep마다 (batch_size, 1) 크기로 자름
-                # out_fr += model(timestep_data) # 1회 순전파
-                encoded_data = encoder(x)
-                out_fr += model(encoded_data)
+
+
+            # 필터연산 (타임스텝은 안에 들어가있음)
+            out_fr = model(x, encoder_tp_iter_repeat) # 앞으로도 그렇겠지만, 순전파꺼 넣는다고 x 말고 data 넣는 치명적 실수 하지 말 것 !!!
         
-        
-            out_fr = out_fr / timestep
+
+
+                
+                
+            # 여기부턴 출력값 처리에 관한 내용이니 메커니즘 건들거면 여긴 안만져도 됨
+            
+            # out_fr = out_fr / timestep # 발화비율은 CNN필터 모델 안에서 계산되어 나온다.
             # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
             
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
 
-            weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니깐..?
+            weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
             final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
             
             # 여기에도 total loss 찍기
@@ -270,6 +278,8 @@ def check_accuracy(loader, model, writer):
 
 
 
+
+
 ########### 우선순위 작업 ############
 
 # 데이터셋의 클래스 당 비율 불일치 문제가 있으므로 가중치를 통해 균형을 맞추도록 한다.
@@ -280,13 +290,24 @@ train_dataset = MITLoader_MLP_binary(csv_file=train_path)
 # train, valid 로더는 k-fold 안에서 생성된다.
 
 
-
 ########### K-fold 시작! ############
+
+########### iter은 너무 느리므로 여기선 지정된 fold일 때만 연산 수행하도록 변경!!! ###########
+
 
 kf = KFold(n_splits=k_folds, shuffle=True, random_state=random_seed)
 
 # k-Fold 수행
 for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
+
+    # fold 순서 확인하여 자기 fold인 경우에만 진행
+    if fold == fold_num : 
+        pass
+    else : 
+        continue
+
+
+
     print(f"Starting fold {fold + 1}/{k_folds}...")
 
     # Train/Validation 데이터셋 분리
@@ -304,14 +325,22 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
     json_output_fold = checkpoint_path_fold + "_config.json" # 체크포인트에 동봉되는 config 용
     lastpoint_path_fold = checkpoint_path_fold + "_lastEpoch.pt" # 최종에포크 저장용
     checkpoint_path_fold += ".pt" # 체크포인트 확장자 마무리
-
+    
     # SNN 네트워크 초기화
-    model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size,
-                    hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias, reset_value_residual=reset_value_residual).to(device)
+    model = SNN_MLP(num_classes = num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, threshold_value=threshold_value, 
+                bias_option=need_bias, reset_value_residual=reset_value_residual).to(device=device)
 
-    encoder = encoding.PoissonEncoder() # 포아송 인코더
+    # 인코더 가중치 수동지정
+    manual_weights = torch.linspace(encoder_min,encoder_max,steps=hidden_size).view(1,-1).to(device).transpose(1,0) # 0.2부터 2.0까지 인코더 뉴런 수만큼 지정
+    model.encoder[0].weight = nn.Parameter(manual_weights) # 대입
+    model.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
 
-    # 옵티마이저, 스케줄러러
+    # 인코더 가중치 학습 제외 : learnable이므로 이거만 딱 빼면 된다.
+    # for param in model.encoder.parameters():
+    #     param.requires_grad = False
+    
+
+    # 옵티마이저, 스케줄러
     train_params = [p for p in model.parameters() if p.requires_grad] # 'requires_grad'가 False인 파라미터 말고 나머지는 학습용으로 돌리기기
     optimizer = optim.Adam(train_params, lr=learning_rate)
     scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=scheduler_tmax, eta_min=scheduler_eta_min)
@@ -334,12 +363,11 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
 
             # 순전파
             out_fr = 0.
-            for t in range(timestep):
-                encoded_data = encoder(data)
-                out_fr += model(encoded_data)
+            out_fr = model(data, encoder_tp_iter_repeat)
+            
 
             # loss 계산 (total_loss : 1 에포크의 loss)
-            out_fr /= timestep
+            # out_fr /= timestep # 얘는 모델 안에서 연산됨
             loss = F.mse_loss(out_fr, label_onehot, reduction='none')
             weighted_loss = loss * class_weight[targets].unsqueeze(1)
             final_loss = weighted_loss.mean()

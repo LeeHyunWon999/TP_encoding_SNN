@@ -1,5 +1,5 @@
 {
-    "cuda_gpu" : 0,
+    "cuda_gpu" : 2,
     "model_name" : "SNN_MLP_ver6_TP_iter",
     "num_classes" : 2,
     "num_encoders" : 64,
