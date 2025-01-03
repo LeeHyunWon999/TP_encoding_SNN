@@ -75,6 +75,7 @@ random_seed = json_data['random_seed']
 checkpoint_save = json_data['checkpoint_save']
 checkpoint_path = json_data['checkpoint_path']
 threshold_value = json_data['threshold_value']
+reset_value_residual = json_data['reset_value_residual']
 need_bias = json_data['need_bias']
 k_folds = json_data['k_folds']
 
@@ -120,14 +121,14 @@ final_epoch = 0 # 마지막에 최종 에포크 확인용
 # 이제 메인으로 사용할 SNN 모델이 들어간다 : 포아송 인코딩이므로 인코딩 레이어 없앨 것!
 # 일단 spikingjelly에서 그대로 긁어왔으므로, 구동이 안되겠다 싶은 녀석들은 읽고 바꿔둘 것.
 class SNN_MLP(nn.Module):
-    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option):
+    def __init__(self, num_classes, num_encoders, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual):
         super().__init__()
         
         # SNN 리니어 : 인코더 입력 -> 히든
         self.hidden = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(num_encoders, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
         
         # 입력-히든-출력으로 진행할 것
@@ -142,7 +143,7 @@ class SNN_MLP(nn.Module):
         self.layer = nn.Sequential(
             # layer.Flatten(),
             layer.Linear(hidden_size, num_classes, bias=bias_option), # bias는 일단 기본값 True로 두기
-            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset=0.0, v_threshold=threshold_value),
+            neuron.IFNode(surrogate_function=surrogate.ATan(), v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
         
     
@@ -249,7 +250,7 @@ def check_accuracy(loader, model, writer):
             
             
             # 순전파
-            burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
+            burst_encoder = BURST(beta=burst_beta, init_th=burst_init_th) # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
             out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
             for t in range(timestep) :  # 원래 timestep 들어가야함
                 # print(data.shape)
@@ -354,7 +355,8 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
 
     # SNN 네트워크 초기화
     model = SNN_MLP(num_encoders=num_encoders, num_classes=num_classes, hidden_size=hidden_size,
-                    hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias).to(device)
+                    hidden_size_2=hidden_size_2, threshold_value=threshold_value, bias_option=need_bias,
+                    reset_value_residual=reset_value_residual).to(device)
 
     # 옵티마이저, 스케줄러
     train_params = [p for p in model.parameters() if p.requires_grad] # 'requires_grad'가 False인 파라미터 말고 나머지는 학습용으로 돌리기기
@@ -377,7 +379,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
             targets = targets.to(device=device)
             label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
 
-            burst_encoder = BURST() # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
+            burst_encoder = BURST(beta=burst_beta, init_th=burst_init_th) # 배치 안에서 소환해야 다음 배치에서 이녀석의 남은 뉴런상태를 사용하지 않음
 
             # 순전파
             out_fr = 0.

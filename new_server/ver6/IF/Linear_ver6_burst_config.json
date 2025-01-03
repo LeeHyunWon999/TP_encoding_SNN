@@ -25,6 +25,7 @@
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
     "threshold_value" : 1.0,
+    "reset_value_residual" : false,
     "need_bias" : true,
     "k_folds" : 5
 }
