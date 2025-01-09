@@ -27,5 +27,6 @@
     "reset_value_residual" : false,
     "need_bias" : true,
     "k_folds" : 5,
-    "saved_model_dir" : 
+    "saved_model_dir" : "/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver6_TP_learnable_2024-12-29-21-57-05_fold5_lastEpoch.pt",
+    "temp_test_fold" : 5
 }

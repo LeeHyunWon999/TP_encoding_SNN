@@ -76,6 +76,7 @@ reset_value_residual = json_data['reset_value_residual']
 need_bias = json_data['need_bias']
 k_folds = json_data['k_folds']
 saved_model_dir = json_data['saved_model_dir']
+temp_test_fold = json_data['temp_test_fold']
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
@@ -114,7 +115,7 @@ min_valid_loss = float('inf')
 final_epoch = 0 # 마지막에 최종 에포크 확인용
 
 
-# 여기선 CNN 인코딩 방식을 취했다.
+
 class SNN_MLP(nn.Module):
     def __init__(self, num_classes, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual):
         super().__init__()
@@ -258,13 +259,13 @@ def check_accuracy(loader, model, writer):
     valid_auroc_weighted = auroc_weighted.compute()
     valid_auprc = auprc.compute()
 
-    writer.add_scalar('valid_Loss', valid_loss, epoch)
-    writer.add_scalar('valid_Accuracy', valid_accuracy, epoch)
-    writer.add_scalar('valid_F1_micro', valid_f1_micro, epoch)
-    writer.add_scalar('valid_F1_weighted', valid_f1_weighted, epoch)
-    writer.add_scalar('valid_AUROC_macro', valid_auroc_macro, epoch)
-    writer.add_scalar('valid_AUROC_weighted', valid_auroc_weighted, epoch)
-    writer.add_scalar('valid_auprc', valid_auprc, epoch)
+    writer.add_scalar('valid_Loss', valid_loss, 0)
+    writer.add_scalar('valid_Accuracy', valid_accuracy, 0)
+    writer.add_scalar('valid_F1_micro', valid_f1_micro, 0)
+    writer.add_scalar('valid_F1_weighted', valid_f1_weighted, 0)
+    writer.add_scalar('valid_AUROC_macro', valid_auroc_macro, 0)
+    writer.add_scalar('valid_AUROC_weighted', valid_auroc_weighted, 0)
+    writer.add_scalar('valid_auprc', valid_auprc, 0)
 
     # 모델 다시 훈련으로 전환
     model.train()
@@ -277,175 +278,42 @@ def check_accuracy(loader, model, writer):
 
 
 
+
+
 ########### 우선순위 작업 ############
 
 # 데이터셋의 클래스 당 비율 불일치 문제가 있으므로 가중치를 통해 균형을 맞추도록 한다.
 class_weight = torch.tensor(class_weight, device=device)
 
-# 데이터셋, 데이터로더 : train, test (k-fold를 위해 train을 나누는 것에 유의!)
-train_dataset = MITLoader_MLP_binary(csv_file=train_path)
-# train, valid 로더는 k-fold 안에서 생성된다.
+# 데이터셋, 데이터로더 : test
+test_dataset = MITLoader_MLP_binary(csv_file=test_path)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+# exec_time_test : test용 exec_time 새로 만든다.
+exec_time_test = saved_model_dir.split("_")[-3]
+
+############ 1회 inference ############
+
+# TensorBoard 폴더 설정
+writer = SummaryWriter(log_dir=f"./tensorboard/{model_name}" + "_" + exec_time_test + f"_test{temp_test_fold}")
+
+# SNN 네트워크 초기화
+model = SNN_MLP(num_classes = num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, threshold_value=threshold_value, 
+            bias_option=need_bias, reset_value_residual=reset_value_residual).to(device=device)
+checkpoint = torch.load(saved_model_dir)
+model.load_state_dict(checkpoint["model_state_dict"])
+model.to(device)
+model.eval()
+
+# 혹시 모르니 뉴런상태 초기화(가중치 초기화가 아니라 내부의 막전위 초기화임!)
+functional.reset_net(model)
+
+# valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
+valid_loss = check_accuracy(test_loader, model, writer)
 
 
-########### K-fold 시작! ############
 
-kf = KFold(n_splits=k_folds, shuffle=True, random_state=random_seed)
+# 텐서보드 닫기
+writer.close()
 
-# k-Fold 수행
-for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
-    print(f"Starting fold {fold + 1}/{k_folds}...")
-
-    # Train/Validation 데이터셋 분리
-    train_subset = torch.utils.data.Subset(train_dataset, train_idx)
-    val_subset = torch.utils.data.Subset(train_dataset, val_idx)
-
-    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, drop_last=True)
-    val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
-
-    # TensorBoard 폴더 설정
-    writer = SummaryWriter(log_dir=f"./tensorboard/{model_name}" + "_" + exec_time + f"_fold{fold + 1}")
-
-    # 체크포인트 위치도 상세히 갱신
-    checkpoint_path_fold = checkpoint_path + str(str(model_name) + "_" + exec_time + f"_fold{fold + 1}")
-    json_output_fold = checkpoint_path_fold + "_config.json" # 체크포인트에 동봉되는 config 용
-    lastpoint_path_fold = checkpoint_path_fold + "_lastEpoch.pt" # 최종에포크 저장용
-    checkpoint_path_fold += ".pt" # 체크포인트 확장자 마무리
-    
-    # SNN 네트워크 초기화
-    model = SNN_MLP(num_classes = num_classes, hidden_size=hidden_size, hidden_size_2=hidden_size_2, threshold_value=threshold_value, 
-                bias_option=need_bias, reset_value_residual=reset_value_residual).to(device=device)
-
-    # 인코더 가중치 수동지정
-    manual_weights = torch.linspace(encoder_min,encoder_max,steps=hidden_size).view(1,-1).to(device).transpose(1,0) # 0.2부터 2.0까지 인코더 뉴런 수만큼 지정
-    model.encoder[0].weight = nn.Parameter(manual_weights) # 대입
-    model.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
-
-    # 인코더 가중치 학습 제외 : learnable이므로 이거만 딱 빼면 된다.
-    # for param in model.encoder.parameters():
-    #     param.requires_grad = False
-    
-
-    # 옵티마이저, 스케줄러
-    train_params = [p for p in model.parameters() if p.requires_grad] # 'requires_grad'가 False인 파라미터 말고 나머지는 학습용으로 돌리기기
-    optimizer = optim.Adam(train_params, lr=learning_rate)
-    scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=scheduler_tmax, eta_min=scheduler_eta_min)
-
-    # Training Loop
-    for epoch in range(num_epochs):
-        model.train()
-        total_loss = 0
-        accuracy.reset()
-        f1_micro.reset()
-        f1_weighted.reset()
-        auroc_macro.reset()
-        auroc_weighted.reset()
-        auprc.reset()
-
-        for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
-            data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
-            targets = targets.to(device=device)
-            label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
-
-            # 순전파
-            out_fr = 0.
-            out_fr = model(data)
-            
-
-            # loss 계산 (total_loss : 1 에포크의 loss)
-            # out_fr /= timestep # 얘는 모델 안에서 연산됨
-            loss = F.mse_loss(out_fr, label_onehot, reduction='none')
-            weighted_loss = loss * class_weight[targets].unsqueeze(1)
-            final_loss = weighted_loss.mean()
-            total_loss += final_loss.item()
-
-            # 역전파
-            optimizer.zero_grad()
-            final_loss.backward()
-            optimizer.step()
-
-            # 지표 계산
-            preds = torch.argmax(out_fr, dim=1)
-            accuracy.update(preds, targets)
-            f1_micro.update(preds, targets)
-            f1_weighted.update(preds, targets)
-            auroc_macro.update(preds, targets)
-            auroc_weighted.update(preds, targets)
-            probabilities = F.softmax(out_fr, dim=1)[:, 1]
-            auprc.update(probabilities, targets)
-
-            functional.reset_net(model)
-
-        # 스케줄러는 에포크 단위로 진행
-        scheduler.step()
-
-        # 한 에포크 진행 다 됐으면 training 지표 tensorboard에 찍고 valid 돌리기
-        train_loss = total_loss / len(train_loader)
-        train_accuracy = accuracy.compute()
-        train_f1_micro = f1_micro.compute()
-        train_f1_weighted = f1_weighted.compute()
-        train_auroc_macro = auroc_macro.compute()
-        train_auroc_weighted = auroc_weighted.compute()
-        train_auprc = auprc.compute()
-
-        writer.add_scalar('train_Loss', train_loss, epoch)
-        writer.add_scalar('train_Accuracy', train_accuracy, epoch)
-        writer.add_scalar('train_F1_micro', train_f1_micro, epoch)
-        writer.add_scalar('train_F1_weighted', train_f1_weighted, epoch)
-        writer.add_scalar('train_AUROC_macro', train_auroc_macro, epoch)
-        writer.add_scalar('train_AUROC_weighted', train_auroc_weighted, epoch)
-        writer.add_scalar('train_auprc', train_auprc, epoch)
-
-        # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
-        valid_loss = check_accuracy(val_loader, model, writer)
-
-        print(f'Fold {fold + 1}, Epoch {epoch + 1}/{num_epochs}, Valid Loss: {valid_loss}')
-
-        # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
-        if early_stop_enable :
-            if valid_loss < min_valid_loss : 
-                min_valid_loss = valid_loss
-                earlystop_counter = early_stop
-                if checkpoint_save : 
-                    print("best performance, saving..")
-                    torch.save({
-                        'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'loss': valid_loss,
-                        }, checkpoint_path_fold) # 가장 좋은 기록 나온 체크포인트 저장
-                    with open(json_output_fold, "w", encoding='utf-8') as json_output : 
-                        json.dump(json_data, json_output) # 설정파일도 저장
-            else : 
-                earlystop_counter -= 1
-                if earlystop_counter == 0 : # train epoch 빠져나오며 최종 모델 저장
-                    final_epoch = epoch
-                    print("last epoch model saving..")
-                    torch.save({
-                        'epoch': final_epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'loss': valid_loss,
-                        }, lastpoint_path_fold)
-                    with open(json_output_fold, "w", encoding='utf-8') as json_output : 
-                        json.dump(json_data, json_output) # 설정파일도 저장
-                    break # train epoch를 빠져나옴
-        else : 
-            final_epoch = epoch
-            if epoch == num_epochs - 1 : # 얼리스탑과 별개로 최종 모델 저장
-                print("last epoch model saving..")
-                torch.save({
-                    'epoch': final_epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': valid_loss,
-                    }, lastpoint_path_fold)
-                with open(json_output_fold, "w", encoding='utf-8') as json_output : 
-                        json.dump(json_data, json_output) # 설정파일도 저장
-
-
-    # 개별 텐서보드 닫기
-    writer.close()
-
-    print("fold " + f"{fold + 1}" + " training finished; epoch :" + str(final_epoch))
-
-print("All folds finished.")
+print("test finished.")
