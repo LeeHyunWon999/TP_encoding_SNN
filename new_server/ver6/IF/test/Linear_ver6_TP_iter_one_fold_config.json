@@ -27,5 +27,6 @@
     "reset_value_residual" : false,
     "need_bias" : true,
     "k_folds" : 5,
-    "fold_num" : 4
+    "fold_num" : 4,
+    "saved_model_dir" : 
 }

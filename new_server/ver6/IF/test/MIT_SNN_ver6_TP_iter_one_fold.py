@@ -76,7 +76,7 @@ reset_value_residual = json_data['reset_value_residual']
 need_bias = json_data['need_bias']
 k_folds = json_data['k_folds']
 fold_num = json_data['fold_num']
-
+saved_model_dir = json_data['saved_model_dir']
 
 # Cuda 써야겠지?
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열

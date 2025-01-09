@@ -26,5 +26,6 @@
     "threshold_value" : 1.0,
     "reset_value_residual" : false,
     "need_bias" : true,
-    "k_folds" : 5
+    "k_folds" : 5,
+    "saved_model_dir" : 
 }
