@@ -1,6 +1,6 @@
 {
     "cuda_gpu" : 3,
-    "model_name" : "SNN_MLP_ver6_filter_CNN_IF",
+    "model_name" : "SNN_MLP_ver6_filter_CNN_IF_str16",
     "num_classes" : 2,
     "num_encoders" : 64,
     "early_stop" : 25,
@@ -21,7 +21,7 @@
     "encoder_type" : "filter",
     "encoder_tp_iter_repeat" : 3,
     "encoder_filter_kernel_size" : 32,
-    "encoder_filter_stride" : 4,
+    "encoder_filter_stride" : 16,
     "encoder_filter_padding" : 0, 
     "encoder_filter_channel_size" : 1024,
     "random_seed" : 999,
