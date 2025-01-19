@@ -227,6 +227,10 @@ class MITLoader_MLP_binary(Dataset):
 # test 데이터로 정확도 측정 : 얘도 훈련때랑 똑같이 집어넣어야 한다.
 def check_accuracy(loader, model, writer):
 
+    # 시간 측정
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+
     # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
     total_loss = 0
     accuracy.reset()
@@ -242,6 +246,7 @@ def check_accuracy(loader, model, writer):
     print("validation 진행중...")
 
     with  torch.no_grad():
+        start_event.record()  # 시작 이벤트 기록
         for x, y in loader:         ############### train쪽에서 코드 복붙 시 (data, targets) 가 (x, y) 로 바뀌는 것에 유의할 것!!!!!!!!###############
             x = x.to(device=device).squeeze(1)
             y = y.to(device=device)
@@ -289,6 +294,12 @@ def check_accuracy(loader, model, writer):
             
             # 얘도 SNN 모델이니 초기화 필요
             functional.reset_net(model)
+
+        end_event.record()  # 종료 이벤트 기록
+    
+    torch.cuda.synchronize()  # 시간측정용 이벤트 완료 대기
+    elapsed_time = start_event.elapsed_time(end_event)  # 밀리초 단위로 반환
+    writer.add_scalar('elapsed_time', elapsed_time, 0) # 시간도 일단 tensorboard에 기록하기
 
     # 각종 평가수치들 만들고 tensorboard에 기록
     valid_loss = total_loss / len(loader)

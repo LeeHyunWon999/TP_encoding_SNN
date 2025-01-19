@@ -1,6 +1,6 @@
 {
-    "cuda_gpu" : 3,
-    "model_name" : "SNN_MLP_ver6_filter_CNN_IF_str16",
+    "cuda_gpu" : 0,
+    "model_name" : "SNN_MLP_ver6_filter_CNN_IF_channel_2048",
     "num_classes" : 2,
     "num_encoders" : 64,
     "early_stop" : 25,
@@ -21,9 +21,9 @@
     "encoder_type" : "filter",
     "encoder_tp_iter_repeat" : 3,
     "encoder_filter_kernel_size" : 32,
-    "encoder_filter_stride" : 16,
+    "encoder_filter_stride" : 4,
     "encoder_filter_padding" : 0, 
-    "encoder_filter_channel_size" : 1024,
+    "encoder_filter_channel_size" : 2048,
     "random_seed" : 999,
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
@@ -31,6 +31,6 @@
     "reset_value_residual" : false,
     "need_bias" : true,
     "k_folds" : 5,
-    "saved_model_dir" : "/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver6_filter_CNN_IF_str16_2025-01-03-11-53-42_fold5_lastEpoch.pt",
-    "temp_test_fold" : 5
+    "saved_model_dir" : "/home/hschoi/data/leehyunwon/ECG-SNN/SNN_MLP_ver6_filter_CNN_IF_channel_2048_2025-01-07-06-30-29_fold1_lastEpoch.pt",
+    "temp_test_fold" : 1
 }
