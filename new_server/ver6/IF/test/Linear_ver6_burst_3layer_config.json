@@ -1,5 +1,5 @@
 {
-    "cuda_gpu" : 1,
+    "cuda_gpu" : 0,
     "model_name" : "SNN_MLP_ver6_burst_3layer",
     "num_classes" : 2,
     "num_encoders" : 187,
@@ -27,5 +27,7 @@
     "threshold_value" : 1.0,
     "reset_value_residual" : false,
     "need_bias" : true,
-    "k_folds" : 5
+    "k_folds" : 5,
+    "saved_model_dir" : "폴드명 일치시키는거 알지?? .pt로 가져오삼",
+    "temp_test_fold" : 5
 }

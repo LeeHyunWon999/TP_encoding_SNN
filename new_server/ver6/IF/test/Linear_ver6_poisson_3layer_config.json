@@ -1,6 +1,6 @@
 {
-    "cuda_gpu" : 1,
-    "model_name" : "SNN_MLP_ver6_burst_3layer",
+    "cuda_gpu" : 0,
+    "model_name" : "SNN_MLP_ver6_poisson_3layer",
     "num_classes" : 2,
     "num_encoders" : 187,
     "early_stop" : 30,
@@ -19,13 +19,13 @@
     "scheduler_eta_min" : 0.00001,
     "encoder_requires_grad" : true,
     "timestep" : 128,
-    "burst_beta" : 2.0,
-    "burst_init_th" : 0.125,
     "random_seed" : 999,
     "checkpoint_save" : true,
     "checkpoint_path" : "/home/hschoi/data/leehyunwon/ECG-SNN/",
     "threshold_value" : 1.0,
     "reset_value_residual" : false,
     "need_bias" : true,
-    "k_folds" : 5
+    "k_folds" : 5,
+    "saved_model_dir" : "폴드명 일치시키는거 알지? .pt로 가져오삼",
+    "temp_test_fold" : 5
 }
