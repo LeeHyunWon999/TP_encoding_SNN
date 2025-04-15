@@ -29,5 +29,5 @@
     "need_bias" : true,
     "k_folds" : 5,
     "saved_model_dir" : "폴드명 일치시키는거 알지?? .pt로 가져오삼",
-    "temp_test_fold" : 5
+    "temp_test_fold" : 1
 }
