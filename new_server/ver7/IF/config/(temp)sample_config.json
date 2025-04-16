@@ -1,0 +1,77 @@
+{
+    "data_loader": {
+        "type" : "CinC",
+        "args" : {
+            "class" : "binary",
+            "batch_size" : 1,
+            "num_workers" :8,
+            "train" :  "/home/hschoi/data/CinC_dataset/train/training2017",
+            "test" : "/home/hschoi/data/CinC_dataset/valid",
+            "spectrogram" : false
+        }
+    
+    },
+
+    "model" : {
+        "type" : "CNN",
+        "args":{
+            "num_classes":  2
+        }
+        
+    },
+
+    "optimizer" : {
+        "type" : "Adam",
+        "args": {
+            "lr" : 2e-4,
+            "weight_decay" : 1e-4
+        }
+    },
+
+    "metric" : {
+        "type" : "AUROC",
+        "task" : "binary",
+        "average" : "macro"
+    },
+    
+    "metrics" : {
+        "type1": "f1",
+        "type2": "AUROC",
+        "type3": "AUPRC", 
+        "task" : "multiclass",
+        "average1" : "macro",
+        "average2" : "weighted",
+        "average3" : "micro"
+    },
+
+
+
+
+    "loss" :{
+        "type" : "Weighted_CE_loss",
+        "weight" : [1.0, 1.0]
+ 
+    },
+
+    "trainer" : {
+        "num_epochs" : 150,
+        "early_stopping_epochs" : 25,
+        "lr" : 2e-4,
+        "weight_decay" : 1e-4,
+        "best_model_save" : false,
+        "best_model_path" : "/home/hschoi/hongwonseok/ECG-SNN/src/result/CinC_CNN_10_binary.pt",
+        "T_max": 50,
+        "eta_min" : 1e-5
+    },
+
+    "tensorboard": {
+        "act" : true,
+        "path" : "./result/CinC_CNN_10_binary"
+    },
+
+
+    "device" : {
+        "gpu" : "0",
+        "cuda" : "cuda"
+    }
+}
