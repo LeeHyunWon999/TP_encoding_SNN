@@ -23,6 +23,11 @@
                     "T_max" : 5,
                     "eta_min" : 0.00001
                 }
+            },
+
+            "checkpoint" : {
+                "active" : true,
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
             }
         }
     },
@@ -66,10 +71,5 @@
     "tensorboard": {
         "active" : true,
         "path" : "./tensorboard/"
-    },
-
-    "checkpoint" : {
-        "active" : true,
-        "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
     }
 }
