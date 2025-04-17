@@ -16,17 +16,15 @@ from torch.utils.tensorboard import SummaryWriter # tensorboard 기록용
 import time # 텐서보드 폴더명에 쓸 시각정보 기록용
 import random # 랜덤시드 고정용
 
-# 여긴 인코더 넣을때 혹시 몰라서 집어넣었음
 import sys
-import os
 import json
-import numpy as np
 
 # 얘는 SNN 학습이니까 당연히 있어야겠지? 특히 SNN 모델을 따로 만드려는 경우엔 뉴런 말고도 넣을 것이 많다.
 # import spikingjelly.activation_based as jelly
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
-
 from sklearn.model_selection import KFold # cross-validation용
+
+from util import util
 
 class trainer : 
     def __init__(self, args) -> None: 
@@ -64,12 +62,175 @@ class trainer :
         earlystop_counter = args['executor']['args']['early_stop_epoch']
         min_valid_loss = float('inf')
         final_epoch = 0 # 마지막에 최종 에포크 확인용
+
+        # 가중치 비율 텐서로 옮기기
+        class_weight = torch.tensor(args['loss']['weight'], device=device)
+
+
+
     
 
     # 훈련 작업(k-fold로 진행)
-    def train() : 
-        pass
+    def train(self, args) : 
 
+        # 데이터셋 로더 선정 (모델은 각 fold 안에서 선언하는 편이 나을 듯..?)
+        train_dataset = util.get_data_loader(args['data_loader'])
+
+        # k-fold 밑작업
+        kf = KFold(n_splits=args['executor']['args']['k-folds'], shuffle=True, random_state=args['executor']['args']['random_seed'])
+
+        # k-Fold 수행
+        for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
+            print(f"Starting fold {fold + 1}/{args['executor']['args']['k-folds']}...")
+
+            # Train/Validation 데이터셋 분리
+            train_subset = torch.utils.data.Subset(train_dataset, train_idx)
+            val_subset = torch.utils.data.Subset(train_dataset, val_idx)
+
+            train_loader = DataLoader(train_subset, batch_size=args['data_loader']['args']['batch_size'], 
+                                      num_workers=args['data_loader']['args']['num_workers'],
+                                      shuffle=True, drop_last=True)
+            val_loader = DataLoader(val_subset, batch_size=args['data_loader']['args']['batch_size'], 
+                                    num_workers=args['data_loader']['args']['num_workers'],
+                                    shuffle=False)
+
+            # TensorBoard 폴더 설정
+            writer = SummaryWriter(log_dir=f"./tensorboard/{args['model']['type']}" + "_" + self.exec_time + f"_fold{fold + 1}")
+
+            # 체크포인트 위치도 상세히 갱신
+            checkpoint_path_fold = args['executor']['args']['checkpoint']['path'] + str(str(args['model']['type']) + "_" + self.exec_time + f"_fold{fold + 1}")
+            json_output_fold = checkpoint_path_fold + "_config.json" # 체크포인트에 동봉되는 config 용
+            lastpoint_path_fold = checkpoint_path_fold + "_lastEpoch.pt" # 최종에포크 저장용
+            checkpoint_path_fold += ".pt" # 체크포인트 확장자 마무리
+            
+            # SNN 네트워크 초기화
+            model = util.get_model(args['model']).to(device=self.device)
+
+            # 옵티마이저, 스케줄러
+            train_params = [p for p in model.parameters() if p.requires_grad] # 'requires_grad'가 False인 파라미터 말고 나머지는 학습용으로 돌리기기
+            optimizer = util.get_optimizer(train_params, args['executor']['args']['optimizer'])
+            scheduler = util.get_scheduler(optimizer, args['executor']['args']['scheduler'])
+            scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=scheduler_tmax, eta_min=scheduler_eta_min)
+
+            # Training Loop
+            for epoch in range(num_epochs):
+                model.train()
+                total_loss = 0
+                accuracy.reset()
+                f1_micro.reset()
+                f1_weighted.reset()
+                auroc_macro.reset()
+                auroc_weighted.reset()
+                auprc.reset()
+
+                for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
+                    data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
+                    targets = targets.to(device=device)
+                    label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
+
+                    # 순전파
+                    out_fr = 0.
+                    out_fr = model(data)
+                    
+
+                    # loss 계산 (total_loss : 1 에포크의 loss)
+                    # out_fr /= timestep # 얘는 모델 안에서 연산됨
+                    loss = F.mse_loss(out_fr, label_onehot, reduction='none')
+                    weighted_loss = loss * class_weight[targets].unsqueeze(1)
+                    final_loss = weighted_loss.mean()
+                    total_loss += final_loss.item()
+
+                    # 역전파
+                    optimizer.zero_grad()
+                    final_loss.backward()
+                    optimizer.step()
+
+                    # 지표 계산
+                    preds = torch.argmax(out_fr, dim=1)
+                    accuracy.update(preds, targets)
+                    f1_micro.update(preds, targets)
+                    f1_weighted.update(preds, targets)
+                    auroc_macro.update(preds, targets)
+                    auroc_weighted.update(preds, targets)
+                    probabilities = F.softmax(out_fr, dim=1)[:, 1]
+                    auprc.update(probabilities, targets)
+
+                    functional.reset_net(model)
+
+                # 스케줄러는 에포크 단위로 진행
+                scheduler.step()
+
+                # 한 에포크 진행 다 됐으면 training 지표 tensorboard에 찍고 valid 돌리기
+                train_loss = total_loss / len(train_loader)
+                train_accuracy = accuracy.compute()
+                train_f1_micro = f1_micro.compute()
+                train_f1_weighted = f1_weighted.compute()
+                train_auroc_macro = auroc_macro.compute()
+                train_auroc_weighted = auroc_weighted.compute()
+                train_auprc = auprc.compute()
+
+                writer.add_scalar('train_Loss', train_loss, epoch)
+                writer.add_scalar('train_Accuracy', train_accuracy, epoch)
+                writer.add_scalar('train_F1_micro', train_f1_micro, epoch)
+                writer.add_scalar('train_F1_weighted', train_f1_weighted, epoch)
+                writer.add_scalar('train_AUROC_macro', train_auroc_macro, epoch)
+                writer.add_scalar('train_AUROC_weighted', train_auroc_weighted, epoch)
+                writer.add_scalar('train_auprc', train_auprc, epoch)
+
+                # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
+                valid_loss = check_accuracy(val_loader, model, writer)
+
+                print(f'Fold {fold + 1}, Epoch {epoch + 1}/{num_epochs}, Valid Loss: {valid_loss}')
+
+                # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
+                if early_stop_enable :
+                    if valid_loss < min_valid_loss : 
+                        min_valid_loss = valid_loss
+                        earlystop_counter = early_stop
+                        if checkpoint_save : 
+                            print("best performance, saving..")
+                            torch.save({
+                                'epoch': epoch,
+                                'model_state_dict': model.state_dict(),
+                                'optimizer_state_dict': optimizer.state_dict(),
+                                'loss': valid_loss,
+                                }, checkpoint_path_fold) # 가장 좋은 기록 나온 체크포인트 저장
+                            with open(json_output_fold, "w", encoding='utf-8') as json_output : 
+                                json.dump(json_data, json_output) # 설정파일도 저장
+                    else : 
+                        earlystop_counter -= 1
+                        if earlystop_counter == 0 : # train epoch 빠져나오며 최종 모델 저장
+                            final_epoch = epoch
+                            print("last epoch model saving..")
+                            torch.save({
+                                'epoch': final_epoch,
+                                'model_state_dict': model.state_dict(),
+                                'optimizer_state_dict': optimizer.state_dict(),
+                                'loss': valid_loss,
+                                }, lastpoint_path_fold)
+                            with open(json_output_fold, "w", encoding='utf-8') as json_output : 
+                                json.dump(json_data, json_output) # 설정파일도 저장
+                            break # train epoch를 빠져나옴
+                else : 
+                    final_epoch = epoch
+                    if epoch == num_epochs - 1 : # 얼리스탑과 별개로 최종 모델 저장
+                        print("last epoch model saving..")
+                        torch.save({
+                            'epoch': final_epoch,
+                            'model_state_dict': model.state_dict(),
+                            'optimizer_state_dict': optimizer.state_dict(),
+                            'loss': valid_loss,
+                            }, lastpoint_path_fold)
+                        with open(json_output_fold, "w", encoding='utf-8') as json_output : 
+                                json.dump(json_data, json_output) # 설정파일도 저장
+
+
+            # 개별 텐서보드 닫기
+            writer.close()
+
+            print("fold " + f"{fold + 1}" + " training finished; epoch :" + str(final_epoch))
+
+        print("All folds finished.")
 
 
 

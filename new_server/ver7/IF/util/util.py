@@ -1,8 +1,12 @@
 import torch
 from torch import nn, Tensor  # 모든 DNN 모델들
+from torch import optim  # SGD, Adam 등
+from torch.optim.lr_scheduler import CosineAnnealingLR # 코사인스케줄러(옵티마이저 보조용)
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
 from executor import trainer, tester
+from data import data_loader
+import model
 from model import BURST
 
 def execute(args) :     
@@ -18,12 +22,51 @@ def execute(args) :
 
 # 모델 구분하여 받아오기
 def get_model(args) : 
-    pass
+    if args['type'] == 'poisson' : 
+        return model.SNN_MLP(num_encoders=args['args']['input_size'], num_classes=args['args']['num_classes'], 
+                             hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
+                             threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
+                             reset_value_residual=args['args']['reset_value_residual'])
+    elif args['type'] == 'burst' : # 일단은 poisson과 동일한 구성
+        return model.SNN_MLP(num_encoders=args['args']['input_size'], num_classes=args['args']['num_classes'], 
+                             hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
+                             threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
+                             reset_value_residual=args['args']['reset_value_residual'])
+    elif args['type'] == 'TP' : 
+        return model.TP(num_classes = args['args']['num_classes'], 
+                        hidden_size=args['args']['hidden_size'], hidden_size_2=args['args']['hidden_size_2'], 
+                        threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
+                        reset_value_residual=args['args']['reset_value_residual'])
+    elif args['type'] == 'filter_CNN' : 
+        return model.filter_CNN(num_classes = args['args']['num_classes'], hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
+                                out_channels=args['args']['type_args']['channel'], kernel_size=args['args']['type_args']['window'], 
+                                stride=args['args']['type_args']['stride'], padding=args['args']['type_args']['padding'], 
+                                threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
+                                reset_value_residual=args['args']['reset_value_residual'])
 
 # 데이터로더 구분하여 받아오기
 def get_data_loader(args) : 
-    pass
+    if args['type'] == 'CinC' : 
+        raise ValueError("공사중입니다...")
+    elif args['type'] == 'MIT-BIH' : 
+        return data_loader.MITLoader_MLP_binary(csv_file=args['args']['train_path'])
+    else : 
+        raise TypeError("지원되지 않는 데이터로더 인자입니다.")
+    
 
+# 옵티마이저 겟
+def get_optimizer(train_params, args) : 
+    if args['type'] == 'Adam':
+        return optim.Adam(train_params, lr=args['lr'])
+    else : 
+        raise TypeError("지원되지 않는 옵티마이저 인자입니다.")
+
+# 스케줄러 겟
+def get_scheduler(optimizer, args) : 
+    if args['type'] == 'CosineAnnealingLR' : 
+        return CosineAnnealingLR(optimizer=optimizer, T_max=args['args']['T_max'], eta_min=args['args']['eta_min'])
+    else : 
+        raise TypeError("지원되지 않는 스케줄러 인자입니다.")
 
 
 
@@ -61,4 +104,4 @@ def propagation(model, x, args) -> float :
     elif args['model']['type'] == 'filter_CNN' : 
         return model(x)
     else : 
-        raise TypeError("Model name mismatched.")
+        raise TypeError("지원되지 않는 순전파 인자입니다.")
