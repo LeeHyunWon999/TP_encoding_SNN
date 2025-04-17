@@ -33,8 +33,8 @@ class trainer :
         # cuda 환경 사용
         os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # GPU 번호별로 0번부터 나열
         os.environ["CUDA_VISIBLE_DEVICES"]= str(args['device']['gpu'])  # 상황에 맞춰 변경할 것
-        device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
-        print("Device :" + device) # 확인용
+        self.device = "cuda" if torch.cuda.is_available() else "cpu" # 연산에 GPU 쓰도록 지정
+        print("Device :" + self.device) # 확인용
 
         # 랜덤시드 고정
         seed = args['executor']['args']['random_seed']
@@ -48,40 +48,41 @@ class trainer :
             torch.backends.cudnn.benchmark = False
 
         # 파일 실행 기준 시간 변수 생성
-        exec_time = time.strftime('%Y-%m-%d-%H-%M-%S')
+        self.exec_time = time.strftime('%Y-%m-%d-%H-%M-%S')
 
         # 텐서보드에 찍을 메트릭 여기서 정의
-        f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(device)
-        f1_weighted = torchmetrics.F1Score(num_classes=2, average='weighted', task='binary').to(device)
-        auroc_macro = torchmetrics.AUROC(num_classes=2, average='macro', task='binary').to(device)
-        auroc_weighted = torchmetrics.AUROC(num_classes=2, average='weighted', task='binary').to(device)
-        auprc = torchmetrics.AveragePrecision(num_classes=2, task='binary').to(device)
-        accuracy = torchmetrics.Accuracy(threshold=0.5, task='binary').to(device)
+        self.f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(self.device)
+        self.f1_weighted = torchmetrics.F1Score(num_classes=2, average='weighted', task='binary').to(self.device)
+        self.auroc_macro = torchmetrics.AUROC(num_classes=2, average='macro', task='binary').to(self.device)
+        self.auroc_weighted = torchmetrics.AUROC(num_classes=2, average='weighted', task='binary').to(self.device)
+        self.auprc = torchmetrics.AveragePrecision(num_classes=2, task='binary').to(self.device)
+        self.accuracy = torchmetrics.Accuracy(threshold=0.5, task='binary').to(self.device)
 
         # 참고 : 이것 외에도 에포크, Loss까지 찍어야 하니 참고할 것!
-        earlystop_counter = args['executor']['args']['early_stop_epoch']
-        min_valid_loss = float('inf')
-        final_epoch = 0 # 마지막에 최종 에포크 확인용
+        self.earlystop_counter = args['executor']['args']['early_stop_epoch']
+        self.min_valid_loss = float('inf')
+        self.final_epoch = 0 # 마지막에 최종 에포크 확인용
 
         # 가중치 비율 텐서로 옮기기
-        class_weight = torch.tensor(args['loss']['weight'], device=device)
+        self.class_weight = torch.tensor(args['loss']['weight'], device=self.device)
 
 
 
     
 
     # 훈련 작업(k-fold로 진행)
-    def train(self, args) : 
+    def train(self) : 
+        args = self.args
 
         # 데이터셋 로더 선정 (모델은 각 fold 안에서 선언하는 편이 나을 듯..?)
         train_dataset = util.get_data_loader(args['data_loader'])
 
         # k-fold 밑작업
-        kf = KFold(n_splits=args['executor']['args']['k-folds'], shuffle=True, random_state=args['executor']['args']['random_seed'])
+        kf = KFold(n_splits=args['executor']['args']['k_folds'], shuffle=True, random_state=args['executor']['args']['random_seed'])
 
         # k-Fold 수행
         for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
-            print(f"Starting fold {fold + 1}/{args['executor']['args']['k-folds']}...")
+            print(f"Starting fold {fold + 1}/{args['executor']['args']['k_folds']}...")
 
             # Train/Validation 데이터셋 분리
             train_subset = torch.utils.data.Subset(train_dataset, train_idx)
@@ -175,9 +176,9 @@ class trainer :
                 writer.add_scalar('train_auprc', train_auprc, epoch)
 
                 # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
-                valid_loss = self.valid(val_loader, model, writer, epoch, args)
+                valid_loss = self.valid(val_loader, model, writer, epoch)
 
-                print(f'Fold {fold + 1}, Epoch {epoch + 1}/{args['executor']['args']['num_epochs']}, Valid Loss: {valid_loss}')
+                print(f"Fold {fold + 1}, Epoch {epoch + 1}/{args['executor']['args']['num_epochs']}, Valid Loss: {valid_loss}")
 
                 # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
                 if args['executor']['args']['early_stop_enable'] :
@@ -237,7 +238,8 @@ class trainer :
 
 
     # 검증 작업(validation), 테스트와 별개로 epoch당 1회씩 진행하기 (훈련 메소드 완성 후 진행하기)
-    def valid(self, loader, model, writer, epoch, args):
+    def valid(self, loader, model, writer, epoch):
+        args = self.args
 
         # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
         total_loss = 0

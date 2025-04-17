@@ -7,8 +7,8 @@ from spikingjelly.activation_based import neuron, encoding, functional, surrogat
 
 from executor import trainer, tester
 from data import data_loader
-import model
-from model import BURST
+import model.model as model
+from model.model import BURST
 
 def execute(args) :     
     if args['executor']['type'] == 'trainer' : 
@@ -89,7 +89,7 @@ def propagation(model, x, args) -> float :
     
     elif args['type'] == 'burst' : 
         burst_encoder = BURST(beta=args['args']['type_args']['burst_beta'], 
-                              init_th=['args']['type_args']['burst_init_th']) # 버스트 인코더, 배치 안에서 소환해야 다음 배치에서 이 인코더의 남은 뉴런상태를 사용하지 않음
+                              init_th=args['args']['type_args']['burst_init_th']) # 버스트 인코더, 배치 안에서 소환해야 다음 배치에서 이 인코더의 남은 뉴런상태를 사용하지 않음
         out_fr = 0.
         timestep = args['args']['type_args']['timestep']
 

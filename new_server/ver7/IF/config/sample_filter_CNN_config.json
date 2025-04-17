@@ -8,7 +8,7 @@
         "args" : {
             "random_seed" : 999,
             "k_folds" : 5,
-            "num_epochs" : 1000,
+            "num_epochs" : 3,
             "early_stop_enable" : false,
             "early_stop_epoch" : 25,
             
@@ -27,18 +27,18 @@
 
             "checkpoint" : {
                 "active" : true,
-                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/"
             }
         }
     },
     
     "data_loader": {
-        "type" : "CinC",
+        "type" : "MIT-BIH",
         "args" : {
             "batch_size" : 256,
             "num_workers" :8,
-            "train_path" :  "",
-            "test_path" : ""
+            "train_path" :  "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
+            "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv"
         }
     
     },

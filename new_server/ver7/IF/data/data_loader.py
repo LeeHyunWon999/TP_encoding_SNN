@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from typing import Callable # 람다식
+import pandas as pd # csv 읽기용
 
 # 데이터 가져오는 알맹이 클래스
 class MITLoader_MLP_binary(Dataset):
