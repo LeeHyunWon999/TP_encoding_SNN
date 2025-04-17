@@ -15,6 +15,18 @@ def execute(args) :
     else : 
         print('오류. 인자를 다시 확인하십시오.')
 
+
+# 모델 구분하여 받아오기
+def get_model(args) : 
+    pass
+
+# 데이터로더 구분하여 받아오기
+def get_data_loader(args) : 
+    pass
+
+
+
+
 # 각 모델의 순전파 동작
 def propagation(model, x, args) -> float : 
     if args['model']['type'] == 'poisson' : 

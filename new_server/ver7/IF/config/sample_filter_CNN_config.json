@@ -1,7 +1,6 @@
 {
     "device" : {
-        "gpu" : "0",
-        "cuda" : "cuda"
+        "gpu" : 0
     },
 
     "executor" : {
@@ -10,7 +9,8 @@
             "random_seed" : 999,
             "k_folds" : 5,
             "num_epochs" : 1000,
-            "early_stop_epoch" : -1,
+            "early_stop_enable" : false,
+            "early_stop_epoch" : 25,
             
             "optimizer" : {
                 "type" : "Adam",
@@ -65,10 +65,6 @@
         "type" : "MSE_loss",
         "weight" : [1.0, 4.0]
     },
-
-    "metric" : [
-        "Loss", "Acc", "F1_micro", "F1_macro", "AUROC_macro", "AUROC_weighted", "AUPRC"
-    ],
 
     "tensorboard": {
         "active" : true,
