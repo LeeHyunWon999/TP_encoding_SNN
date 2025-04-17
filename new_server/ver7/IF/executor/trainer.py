@@ -104,39 +104,36 @@ class trainer :
             checkpoint_path_fold += ".pt" # 체크포인트 확장자 마무리
             
             # SNN 네트워크 초기화
-            model = util.get_model(args['model']).to(device=self.device)
+            model = util.get_model(args['model'], device=self.device).to(device=self.device)
 
             # 옵티마이저, 스케줄러
             train_params = [p for p in model.parameters() if p.requires_grad] # 'requires_grad'가 False인 파라미터 말고 나머지는 학습용으로 돌리기기
             optimizer = util.get_optimizer(train_params, args['executor']['args']['optimizer'])
             scheduler = util.get_scheduler(optimizer, args['executor']['args']['scheduler'])
-            scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=scheduler_tmax, eta_min=scheduler_eta_min)
 
             # Training Loop
-            for epoch in range(num_epochs):
+            for epoch in range(args['executor']['args']['num_epochs']):
                 model.train()
                 total_loss = 0
-                accuracy.reset()
-                f1_micro.reset()
-                f1_weighted.reset()
-                auroc_macro.reset()
-                auroc_weighted.reset()
-                auprc.reset()
+                self.accuracy.reset()
+                self.f1_micro.reset()
+                self.f1_weighted.reset()
+                self.auroc_macro.reset()
+                self.auroc_weighted.reset()
+                self.auprc.reset()
 
                 for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
-                    data = data.to(device=device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
-                    targets = targets.to(device=device)
-                    label_onehot = F.one_hot(targets, num_classes).float() # 원핫으로 MSE loss 쓸거임
+                    data = data.to(device=self.device).squeeze(1) # 일차원이 있으면 제거, 따라서 batch는 절대 1로 두면 안될듯
+                    targets = targets.to(device=self.device)
+                    label_onehot = F.one_hot(targets, args['model']['args']['num_classes']).float() # 원핫으로 MSE loss 쓸거임
 
                     # 순전파
-                    out_fr = 0.
-                    out_fr = model(data)
-                    
+                    out_fr = util.propagation(model, data, args['model'])
 
-                    # loss 계산 (total_loss : 1 에포크의 loss)
-                    # out_fr /= timestep # 얘는 모델 안에서 연산됨
-                    loss = F.mse_loss(out_fr, label_onehot, reduction='none')
-                    weighted_loss = loss * class_weight[targets].unsqueeze(1)
+                    
+                    loss = util.get_loss(out_fr, label_onehot, args['loss'])
+
+                    weighted_loss = loss * self.class_weight[targets].unsqueeze(1)
                     final_loss = weighted_loss.mean()
                     total_loss += final_loss.item()
 
@@ -147,13 +144,13 @@ class trainer :
 
                     # 지표 계산
                     preds = torch.argmax(out_fr, dim=1)
-                    accuracy.update(preds, targets)
-                    f1_micro.update(preds, targets)
-                    f1_weighted.update(preds, targets)
-                    auroc_macro.update(preds, targets)
-                    auroc_weighted.update(preds, targets)
+                    self.accuracy.update(preds, targets)
+                    self.f1_micro.update(preds, targets)
+                    self.f1_weighted.update(preds, targets)
+                    self.auroc_macro.update(preds, targets)
+                    self.auroc_weighted.update(preds, targets)
                     probabilities = F.softmax(out_fr, dim=1)[:, 1]
-                    auprc.update(probabilities, targets)
+                    self.auprc.update(probabilities, targets)
 
                     functional.reset_net(model)
 
@@ -162,12 +159,12 @@ class trainer :
 
                 # 한 에포크 진행 다 됐으면 training 지표 tensorboard에 찍고 valid 돌리기
                 train_loss = total_loss / len(train_loader)
-                train_accuracy = accuracy.compute()
-                train_f1_micro = f1_micro.compute()
-                train_f1_weighted = f1_weighted.compute()
-                train_auroc_macro = auroc_macro.compute()
-                train_auroc_weighted = auroc_weighted.compute()
-                train_auprc = auprc.compute()
+                train_accuracy = self.accuracy.compute()
+                train_f1_micro = self.f1_micro.compute()
+                train_f1_weighted = self.f1_weighted.compute()
+                train_auroc_macro = self.auroc_macro.compute()
+                train_auroc_weighted = self.auroc_weighted.compute()
+                train_auprc = self.auprc.compute()
 
                 writer.add_scalar('train_Loss', train_loss, epoch)
                 writer.add_scalar('train_Accuracy', train_accuracy, epoch)
@@ -178,16 +175,16 @@ class trainer :
                 writer.add_scalar('train_auprc', train_auprc, epoch)
 
                 # valid(자체적으로 tensorboard 내장됨), 반환값으로 얼리스탑 확인하기
-                valid_loss = check_accuracy(val_loader, model, writer)
+                valid_loss = self.valid(val_loader, model, writer, epoch, args)
 
-                print(f'Fold {fold + 1}, Epoch {epoch + 1}/{num_epochs}, Valid Loss: {valid_loss}')
+                print(f'Fold {fold + 1}, Epoch {epoch + 1}/{args['executor']['args']['num_epochs']}, Valid Loss: {valid_loss}')
 
                 # 성능 좋게 나오면 체크포인트 저장 및 earlystop 갱신
-                if early_stop_enable :
+                if args['executor']['args']['early_stop_enable'] :
                     if valid_loss < min_valid_loss : 
                         min_valid_loss = valid_loss
-                        earlystop_counter = early_stop
-                        if checkpoint_save : 
+                        earlystop_counter = args['executor']['args']['early_stop_epoch']
+                        if args['executor']['args']['checkpoint']['active'] : 
                             print("best performance, saving..")
                             torch.save({
                                 'epoch': epoch,
@@ -196,7 +193,7 @@ class trainer :
                                 'loss': valid_loss,
                                 }, checkpoint_path_fold) # 가장 좋은 기록 나온 체크포인트 저장
                             with open(json_output_fold, "w", encoding='utf-8') as json_output : 
-                                json.dump(json_data, json_output) # 설정파일도 저장
+                                json.dump(args, json_output) # 설정파일도 저장
                     else : 
                         earlystop_counter -= 1
                         if earlystop_counter == 0 : # train epoch 빠져나오며 최종 모델 저장
@@ -209,11 +206,11 @@ class trainer :
                                 'loss': valid_loss,
                                 }, lastpoint_path_fold)
                             with open(json_output_fold, "w", encoding='utf-8') as json_output : 
-                                json.dump(json_data, json_output) # 설정파일도 저장
+                                json.dump(args, json_output) # 설정파일도 저장
                             break # train epoch를 빠져나옴
                 else : 
                     final_epoch = epoch
-                    if epoch == num_epochs - 1 : # 얼리스탑과 별개로 최종 모델 저장
+                    if epoch == args['executor']['args']['num_epochs'] - 1 : # 얼리스탑과 별개로 최종 모델 저장
                         print("last epoch model saving..")
                         torch.save({
                             'epoch': final_epoch,
@@ -222,7 +219,7 @@ class trainer :
                             'loss': valid_loss,
                             }, lastpoint_path_fold)
                         with open(json_output_fold, "w", encoding='utf-8') as json_output : 
-                                json.dump(json_data, json_output) # 설정파일도 저장
+                                json.dump(args, json_output) # 설정파일도 저장
 
 
             # 개별 텐서보드 닫기
@@ -240,16 +237,16 @@ class trainer :
 
 
     # 검증 작업(validation), 테스트와 별개로 epoch당 1회씩 진행하기 (훈련 메소드 완성 후 진행하기)
-    def valid(self, loader, model, writer):
+    def valid(self, loader, model, writer, epoch, args):
 
         # 각종 메트릭들 리셋(train에서 에폭마다 돌리므로 얘도 에폭마다 들어감)
         total_loss = 0
-        accuracy.reset()
-        f1_micro.reset()
-        f1_weighted.reset()
-        auroc_macro.reset()
-        auroc_weighted.reset()
-        auprc.reset()
+        self.accuracy.reset()
+        self.f1_micro.reset()
+        self.f1_weighted.reset()
+        self.auroc_macro.reset()
+        self.auroc_weighted.reset()
+        self.auprc.reset()
 
         # 모델 평가용으로 전환
         model.eval()
@@ -258,30 +255,18 @@ class trainer :
 
         with  torch.no_grad():
             for x, y in loader:         ############### train쪽에서 코드 복붙 시 (data, targets) 가 (x, y) 로 바뀌는 것에 유의할 것!!!!!!!!###############
-                x = x.to(device=device).squeeze(1)
-                y = y.to(device=device)
+                x = x.to(device=self.device).squeeze(1)
+                y = y.to(device=self.device)
                 
-                label_onehot = F.one_hot(y, num_classes).float() # 원핫으로 MSE loss 쓸거임
+                label_onehot = F.one_hot(y, args['model']['args']['num_classes']).float() # 원핫으로 MSE loss 쓸거임
                 
-                out_fr = 0. # 출력 발화빈도를 이렇게 설정해두고, 나중에 출력인 리스트 형태로 더해진다 함
+                # 순전파
+                out_fr = util.propagation(model, x, args['model'])
 
+                loss = util.get_loss(out_fr, label_onehot, args['loss'])
 
-                # 필터연산 (타임스텝은 안에 들어가있음)
-                out_fr = model(x) # 앞으로도 그렇겠지만, 순전파꺼 넣는다고 x 말고 data 넣는 치명적 실수 하지 말 것 !!!
-            
-
-
-                    
-                    
-                # 여기부턴 출력값 처리에 관한 내용이니 메커니즘 건들거면 여긴 안만져도 됨
-                
-                # out_fr = out_fr / timestep # 발화비율은 CNN필터 모델 안에서 계산되어 나온다.
-                # out_fr = torch.stack(out_fr_list).mean(dim=0)  # 타임스텝별 출력을 평균내어 합침
-                
-                loss = F.mse_loss(out_fr, label_onehot, reduction='none')
-
-                weighted_loss = loss * class_weight[y].unsqueeze(1) # 가중치 곱하기 : 여긴 배치 없는데 혹시 모르니..?
-                final_loss = weighted_loss.mean() # 요소별 뭐시기 loss를 평균내서 전체 loss 계산?
+                weighted_loss = loss * self.class_weight[y].unsqueeze(1) # 가중치 곱하기
+                final_loss = weighted_loss.mean() # 요소별 loss를 평균내서 전체 loss 계산
                 
                 # 여기에도 total loss 찍기
                 total_loss += final_loss.item()
@@ -289,25 +274,25 @@ class trainer :
                 # 여기도 메트릭 update해야 compute 가능함
                 # 여기도 마찬가지로 크로스엔트로피 드가는거 생각해서 1차원으로 변경 필요함
                 preds = torch.argmax(out_fr, dim=1)
-                accuracy.update(preds, y)
-                f1_micro.update(preds, y)
-                f1_weighted.update(preds, y)
-                auroc_macro.update(preds, y)
-                auroc_weighted.update(preds, y)
+                self.accuracy.update(preds, y)
+                self.f1_micro.update(preds, y)
+                self.f1_weighted.update(preds, y)
+                self.auroc_macro.update(preds, y)
+                self.auroc_weighted.update(preds, y)
                 probabilities = F.softmax(out_fr, dim=1)[:, 1]  # 클래스 "1"의 확률 추출
-                auprc.update(probabilities, y)
+                self.auprc.update(probabilities, y)
                 
                 # 얘도 SNN 모델이니 초기화 필요
                 functional.reset_net(model)
 
         # 각종 평가수치들 만들고 tensorboard에 기록
         valid_loss = total_loss / len(loader)
-        valid_accuracy = accuracy.compute()
-        valid_f1_micro = f1_micro.compute()
-        valid_f1_weighted = f1_weighted.compute()
-        valid_auroc_macro = auroc_macro.compute()
-        valid_auroc_weighted = auroc_weighted.compute()
-        valid_auprc = auprc.compute()
+        valid_accuracy = self.accuracy.compute()
+        valid_f1_micro = self.f1_micro.compute()
+        valid_f1_weighted = self.f1_weighted.compute()
+        valid_auroc_macro = self.auroc_macro.compute()
+        valid_auroc_weighted = self.auroc_weighted.compute()
+        valid_auprc = self.auprc.compute()
 
         writer.add_scalar('valid_Loss', valid_loss, epoch)
         writer.add_scalar('valid_Accuracy', valid_accuracy, epoch)

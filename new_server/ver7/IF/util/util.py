@@ -2,6 +2,7 @@ import torch
 from torch import nn, Tensor  # 모든 DNN 모델들
 from torch import optim  # SGD, Adam 등
 from torch.optim.lr_scheduler import CosineAnnealingLR # 코사인스케줄러(옵티마이저 보조용)
+import torch.nn.functional as F  # 일부 활성화 함수 등 파라미터 없는 함수에 사용
 from spikingjelly.activation_based import neuron, encoding, functional, surrogate, layer
 
 from executor import trainer, tester
@@ -21,7 +22,7 @@ def execute(args) :
 
 
 # 모델 구분하여 받아오기
-def get_model(args) : 
+def get_model(args, device) : 
     if args['type'] == 'poisson' : 
         return model.SNN_MLP(num_encoders=args['args']['input_size'], num_classes=args['args']['num_classes'], 
                              hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
@@ -36,7 +37,8 @@ def get_model(args) :
         return model.TP(num_classes = args['args']['num_classes'], 
                         hidden_size=args['args']['hidden_size'], hidden_size_2=args['args']['hidden_size_2'], 
                         threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
-                        reset_value_residual=args['args']['reset_value_residual'])
+                        reset_value_residual=args['args']['reset_value_residual'], 
+                        encoder_min = args['args']['type_args']['encoder_min'], encoder_max = args['args']['type_args']['encoder_max'], device = device)
     elif args['type'] == 'filter_CNN' : 
         return model.filter_CNN(num_classes = args['args']['num_classes'], hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
                                 out_channels=args['args']['type_args']['channel'], kernel_size=args['args']['type_args']['window'], 
@@ -72,10 +74,10 @@ def get_scheduler(optimizer, args) :
 
 # 각 모델의 순전파 동작
 def propagation(model, x, args) -> float : 
-    if args['model']['type'] == 'poisson' : 
+    if args['type'] == 'poisson' : 
         encoder = encoding.PoissonEncoder() # 포아송 인코더
         out_fr = 0.
-        timestep = args['model']['args']['type_args']['timestep']
+        timestep = args['args']['type_args']['timestep']
 
         for t in range(timestep):
             encoded_data = encoder(x)
@@ -85,11 +87,11 @@ def propagation(model, x, args) -> float :
         out_fr /= timestep
         return out_fr
     
-    elif args['model']['type'] == 'burst' : 
-        burst_encoder = BURST(beta=args['model']['args']['type_args']['burst_beta'], 
-                              init_th=['model']['args']['type_args']['burst_init_th']) # 버스트 인코더, 배치 안에서 소환해야 다음 배치에서 이 인코더의 남은 뉴런상태를 사용하지 않음
+    elif args['type'] == 'burst' : 
+        burst_encoder = BURST(beta=args['args']['type_args']['burst_beta'], 
+                              init_th=['args']['type_args']['burst_init_th']) # 버스트 인코더, 배치 안에서 소환해야 다음 배치에서 이 인코더의 남은 뉴런상태를 사용하지 않음
         out_fr = 0.
-        timestep = args['model']['args']['type_args']['timestep']
+        timestep = args['args']['type_args']['timestep']
 
         for t in range(timestep):
             encoded_data = burst_encoder(x, t)
@@ -99,9 +101,18 @@ def propagation(model, x, args) -> float :
         out_fr /= timestep
         return out_fr
 
-    elif args['model']['type'] == 'TP' : 
+    elif args['type'] == 'TP' : 
         return model(x)
-    elif args['model']['type'] == 'filter_CNN' : 
+    elif args['type'] == 'filter_CNN' : 
         return model(x)
     else : 
         raise TypeError("지원되지 않는 순전파 인자입니다.")
+    
+
+
+# loss 구분 (쓸 일은 없겠지만.. 나중에 loss 변경 작업 시 필요할 수 있으므로 일단 넣어두기)
+def get_loss(out_fr, label_onehot, args) : 
+    if args['type'] == 'MSE_loss' : 
+        return F.mse_loss(out_fr, label_onehot, reduction='none')
+    else : 
+        raise TypeError("지원되지 않는 손실함수 인자입니다.")

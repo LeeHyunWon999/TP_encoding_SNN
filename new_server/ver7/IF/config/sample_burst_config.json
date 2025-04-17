@@ -10,7 +10,8 @@
             "random_seed" : 999,
             "k_folds" : 5,
             "num_epochs" : 1000,
-            "early_stop_epoch" : -1,
+            "early_stop_enable" : false,
+            "early_stop_epoch" : 25,
             
             "optimizer" : {
                 "type" : "Adam",
