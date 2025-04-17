@@ -44,18 +44,18 @@
     },
 
     "model" : {
-        "type" : "burst",
+        "type" : "TP",
         "args" : {
             "type_args" : {
                 "encoder_min" : 0.2,
                 "encoder_max" : 2.0
             },
-        "input_size" : 187,
-        "hidden_size" : 1024,
-        "num_classes" : 2,
-        "threshold" : 1.0,
-        "need_bias" : true,
-        "reset_value_residual" : false
+            "input_size" : 187,
+            "hidden_size" : 1024,
+            "num_classes" : 2,
+            "threshold" : 1.0,
+            "need_bias" : true,
+            "reset_value_residual" : false
         }
     },
     

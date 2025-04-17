@@ -311,7 +311,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_dataset)):
 
     encoder = encoding.PoissonEncoder() # 포아송 인코더
 
-    # 옵티마이저, 스케줄러러
+    # 옵티마이저, 스케줄러
     train_params = [p for p in model.parameters() if p.requires_grad] # 'requires_grad'가 False인 파라미터 말고 나머지는 학습용으로 돌리기기
     optimizer = optim.Adam(train_params, lr=learning_rate)
     scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=scheduler_tmax, eta_min=scheduler_eta_min)
