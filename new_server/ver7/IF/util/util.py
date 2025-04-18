@@ -72,7 +72,8 @@ def get_scheduler(optimizer, args) :
 
 
 
-# 각 모델의 순전파 동작
+# 각 모델의 순전파 동작 (forward()에 합치는 경우 동일한 분류모델을 사용하는 poisson, burst 간의 구분이 forward() 안에서 이뤄져야 하므로 편의상 분리)
+# TP, filterCNN의 경우도 분리할 수 있으나.. 기존 코드가 인코더-모델 일체형이라 일단 보류
 def propagation(model, x, args) -> float : 
     if args['type'] == 'poisson' : 
         encoder = encoding.PoissonEncoder() # 포아송 인코더
