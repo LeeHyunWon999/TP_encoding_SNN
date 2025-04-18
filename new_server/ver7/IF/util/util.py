@@ -106,6 +106,14 @@ def propagation(model, x, args) -> float :
         return model(x)
     elif args['type'] == 'filter_CNN' : 
         return model(x)
+    elif args['type'] == 'TP_2D' : 
+        assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
+        x = x.view(-1, 61, 405)
+        return model(x)
+    elif args['type'] == 'filter_CNN_2D' : 
+        assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
+        x = x.view(-1, 61, 405)
+        return model(x)
     else : 
         raise TypeError("지원되지 않는 순전파 인자입니다.")
     

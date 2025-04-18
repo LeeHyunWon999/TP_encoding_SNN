@@ -135,13 +135,13 @@ class TP(nn.Module):
 
     ############################################ TP 방식, 2D ############################################
 class TP_2D(nn.Module):
-    def __init__(self, num_classes, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual, encoder_min, encoder_max, device):
+    def __init__(self, num_classes, input_channel, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual, encoder_min, encoder_max, device):
         super().__init__()
         
         # SNN 인코더 : 채널 크기만큼 확장하기
         self.encoder = nn.Sequential(
             # layer.Flatten(),
-            layer.Linear(1, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
+            layer.Linear(input_channel, hidden_size, bias=bias_option), # bias는 일단 기본값 True로 두기
             neuron.IFNode(surrogate_function=surrogate.ATan(),v_reset= None if reset_value_residual else 0.0, v_threshold=threshold_value),
             )
 
@@ -163,6 +163,7 @@ class TP_2D(nn.Module):
 
         # 인코더 가중치 수동지정
         manual_weights = torch.linspace(encoder_min,encoder_max,steps=hidden_size).view(1,-1).to(device).transpose(1,0) # 0.2부터 2.0까지 인코더 뉴런 수만큼 지정
+        manual_weights = manual_weights.expand(-1, 61)  # shape 확장 필요 : (hidden_size, 61) 크기가 되도록 지정
         self.encoder[0].weight = nn.Parameter(manual_weights) # 대입
         self.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
 
@@ -173,12 +174,12 @@ class TP_2D(nn.Module):
 
     def forward(self, x: torch.Tensor):
         results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
-        # print(x.shape) # (배치크기, 187) 모양임
+        # print(x.shape) # (배치크기, 61, 405) 모양이 될 것
         
-        timestep_size = x.shape[1] # 187 timestep을 만들어야 함
+        timestep_size = x.shape[2] # 405 timestep을 만들어야 함
         # 근데 이제 이렇게 바꾼 데이터는 (배치, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
         for i in range(timestep_size) : 
-            x_slice = x[:,i].squeeze().unsqueeze(1) # 슬라이스 진행 후 256, 1 크기가 되도록 shape 수정
+            x_slice = x[:,:,i] # 슬라이스 진행 후 256, 61 크기가 되도록 shape 수정(squeeze 등은 여기서 필요없음음)
             x_slice = self.encoder(x_slice)
             x_slice = self.hidden(x_slice)
             x_slice = self.layer(x_slice)
@@ -250,11 +251,11 @@ class filter_CNN(nn.Module):
 
 ############################################ FTP 방식, 2D ############################################
 class filter_CNN_2D(nn.Module):
-    def __init__(self, num_classes, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value, bias_option, reset_value_residual):
+    def __init__(self, num_classes, input_channel, hidden_size, hidden_size_2, out_channels, kernel_size, stride, padding, threshold_value, bias_option, reset_value_residual):
         super().__init__()
         
         # CNN 인코더 필터 : 이건 그냥 갈긴다.
-        self.cnn_encoders = nn.Conv1d(in_channels=1, out_channels=out_channels, kernel_size=kernel_size,
+        self.cnn_encoders = nn.Conv1d(in_channels=input_channel, out_channels=out_channels, kernel_size=kernel_size,
                                       stride=stride, padding=padding, bias=bias_option) # 여기도 bias가 있다 함
         
         # CNN 인코더 IF뉴런 : 이거 추가해서 인코더 완성하기
@@ -285,10 +286,11 @@ class filter_CNN_2D(nn.Module):
     def forward(self, x: torch.Tensor):
         results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
         
-        # CNN 필터는 채널 차원이 추가되므로 1번 쪽에 채널 차원 추가
-        x = x.unsqueeze(1)
+        # CNN 필터는 채널 차원이 추가되므로 1번 쪽에 채널 차원 추가 : 2D 방식에선 원래부터 2차원으로 입력되므로 필요없음
+        #x = x.unsqueeze(1)
+
         # CNN 필터 통과시키기
-        x = self.cnn_encoders(x)
+        x = self.cnn_encoders(x) # [배치, 출력채널(기본 1024), 새로운 timestep] 형태가 될 것임
         # print(x.shape)
         timestep_size = x.shape[2]
         # 근데 이제 이렇게 바꾼 데이터는 (배치, 채널, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
