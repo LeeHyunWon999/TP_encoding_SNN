@@ -75,7 +75,13 @@ class trainer :
         args = self.args
 
         # 데이터셋 로더 선정 (모델은 각 fold 안에서 선언하는 편이 나을 듯..?)
-        train_dataset = util.get_data_loader(args['data_loader'])
+        train_dataset = util.get_data_loader_train(args['data_loader'])
+
+        # assert len(train_dataset) > 0, "🚨 CinC 데이터셋이 비어있습니다!"
+        # print(f"✅ Dataset size: {len(train_dataset)}")
+
+        # temp_train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, drop_last=False)
+        # print(f"✅ DataLoader batch count: {len(temp_train_loader)}")
 
         # k-fold 밑작업
         kf = KFold(n_splits=args['executor']['args']['k_folds'], shuffle=True, random_state=args['executor']['args']['random_seed'])
@@ -96,10 +102,12 @@ class trainer :
                                     shuffle=False)
 
             # TensorBoard 폴더 설정
-            writer = SummaryWriter(log_dir=f"./tensorboard/{args['model']['type']}" + "_" + self.exec_time + f"_fold{fold + 1}")
+            writer = SummaryWriter(log_dir=f"./tensorboard/{args['model']['type']}" + "_" + args['data_loader']['type'] + "_" + 
+                                   self.exec_time + f"_fold{fold + 1}")
 
             # 체크포인트 위치도 상세히 갱신
-            checkpoint_path_fold = args['executor']['args']['checkpoint']['path'] + str(str(args['model']['type']) + "_" + self.exec_time + f"_fold{fold + 1}")
+            checkpoint_path_fold = args['executor']['args']['checkpoint']['path'] + str(str(args['model']['type']) + "_" + args['data_loader']['type'] + "_" + 
+                                                                                        self.exec_time + f"_fold{fold + 1}")
             json_output_fold = checkpoint_path_fold + "_config.json" # 체크포인트에 동봉되는 config 용
             lastpoint_path_fold = checkpoint_path_fold + "_lastEpoch.pt" # 최종에포크 저장용
             checkpoint_path_fold += ".pt" # 체크포인트 확장자 마무리

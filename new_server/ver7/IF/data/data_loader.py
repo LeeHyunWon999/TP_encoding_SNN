@@ -31,24 +31,33 @@ class MITLoader_MLP_binary(Dataset):
 
 # CinC Loader
 class CinC_Loader(Dataset):
-    def __init__(self, ts_file_path, transforms=lambda x: x):
+    def __init__(self, ts_file_path, normalize=True, transforms=lambda x: x):
         super().__init__()
         self.data = []
         self.labels = []
         self.transforms = transforms
+        self.normalize = normalize
 
         with open(ts_file_path, 'r') as f:
             for line in f:
-                if line.startswith("@") or line.strip() == "":
+                if line.startswith("@") or line.startswith("#") or line.strip() == "":
                     continue
-                values, label = line.strip().split(":")
-                features = np.array([float(v) for v in values.split(",")], dtype=np.float32)
-                label = 0 if label.strip().lower() == "normal" else 1
 
-                # Min-max normalization to [0, 1]
-                features = (features - features.min()) / (features.max() - features.min() + 1e-8)
+                parts = line.strip().split(":")
+                *channel_strs, label_str = parts
 
-                self.data.append(features)
+                # 각 채널을 파싱 (405개 타임스텝 가정)
+                channel_data = []
+                for ch_str in channel_strs:
+                    ch_vals = np.array([float(v) for v in ch_str.strip().split(",")], dtype=np.float32)
+                    if self.normalize:
+                        ch_vals = (ch_vals - ch_vals.min()) / (ch_vals.max() - ch_vals.min() + 1e-8)
+                    channel_data.append(ch_vals)
+
+                sample = np.stack(channel_data, axis=0)  # shape: (61, T)
+                label = 0 if label_str.strip().lower() == "normal" else 1
+
+                self.data.append(sample)
                 self.labels.append(label)
 
         self.data = torch.tensor(self.data, dtype=torch.float32)
@@ -58,8 +67,8 @@ class CinC_Loader(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        x = self.data[idx]
+        x = self.data[idx]  # shape: (61, T)
         if self.transforms:
             x = self.transforms(x)
         y = self.labels[idx]
-        return x, y
+        return x.view(-1), y  # ← 기본은 flatten해서 반환

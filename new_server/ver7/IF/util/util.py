@@ -45,16 +45,37 @@ def get_model(args, device) :
                                 stride=args['args']['type_args']['stride'], padding=args['args']['type_args']['padding'], 
                                 threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
                                 reset_value_residual=args['args']['reset_value_residual'])
+    elif args['type'] == 'TP_2D' : 
+        return model.TP_2D(num_classes = args['args']['num_classes'], input_channel=args['args']['input_channel'],
+                        hidden_size=args['args']['hidden_size'], hidden_size_2=args['args']['hidden_size_2'], 
+                        threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
+                        reset_value_residual=args['args']['reset_value_residual'], 
+                        encoder_min = args['args']['type_args']['encoder_min'], encoder_max = args['args']['type_args']['encoder_max'], device = device)
+    elif args['type'] == 'filter_CNN_2D' : 
+        return model.filter_CNN_2D(num_classes = args['args']['num_classes'],  input_channel=args['args']['input_channel'], hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
+                                out_channels=args['args']['type_args']['channel'], kernel_size=args['args']['type_args']['window'], 
+                                stride=args['args']['type_args']['stride'], padding=args['args']['type_args']['padding'], 
+                                threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
+                                reset_value_residual=args['args']['reset_value_residual'])
+    
 
-# 데이터로더 구분하여 받아오기
-def get_data_loader(args) : 
+# 데이터로더 구분하여 받아오기 : trainer
+def get_data_loader_train(args) : 
     if args['type'] == 'CinC' : 
-        raise ValueError("공사중입니다...")
+        return data_loader.CinC_Loader(ts_file_path=args['args']['train_path'])
     elif args['type'] == 'MIT-BIH' : 
         return data_loader.MITLoader_MLP_binary(csv_file=args['args']['train_path'])
     else : 
         raise TypeError("지원되지 않는 데이터로더 인자입니다.")
-    
+
+# 데이터로더 구분하여 받아오기 : tester
+def get_data_loader_test(args) : 
+    if args['type'] == 'CinC' : 
+        return data_loader.CinC_Loader(ts_file_path=args['args']['test_path'])
+    elif args['type'] == 'MIT-BIH' : 
+        return data_loader.MITLoader_MLP_binary(csv_file=args['args']['test_path'])
+    else : 
+        raise TypeError("지원되지 않는 데이터로더 인자입니다.")
 
 # 옵티마이저 겟
 def get_optimizer(train_params, args) : 

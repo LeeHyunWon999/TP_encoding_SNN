@@ -34,12 +34,12 @@
     },
     
     "data_loader": {
-        "type" : "CinC",
+        "type" : "MIT-BIH",
         "args" : {
             "batch_size" : 256,
             "num_workers" :8,
-            "train_path" :  "",
-            "test_path" : ""
+            "train_path" :  "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
+            "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv"
         }
     
     },

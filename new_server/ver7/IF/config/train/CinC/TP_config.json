@@ -1,0 +1,77 @@
+{
+    "device" : {
+        "gpu" : "1",
+        "cuda" : "cuda"
+    },
+
+    "executor" : {
+        "type" : "trainer",
+        "args" : {
+            "random_seed" : 999,
+            "k_folds" : 5,
+            "num_epochs" : 1000,
+            "early_stop_enable" : false,
+            "early_stop_epoch" : 25,
+            
+            "optimizer" : {
+                "type" : "Adam",
+                "lr" : 0.001
+            },
+
+            "scheduler" : {
+                "type" : "CosineAnnealingLR",
+                "args" : {
+                    "T_max" : 5,
+                    "eta_min" : 0.00001
+                }
+            },
+
+            "checkpoint" : {
+                "active" : true,
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
+            }
+        }
+    },
+    
+    "data_loader": {
+        "type" : "CinC",
+        "args" : {
+            "batch_size" : 32,
+            "num_workers" :8,
+            "train_path" :  "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TRAIN.ts",
+            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TEST.ts"
+        }
+    
+    },
+
+    "model" : {
+        "type" : "TP_2D",
+        "args" : {
+            "type_args" : {
+                "encoder_min" : 0.2,
+                "encoder_max" : 2.0
+            },
+            "input_channel" : 61,
+            "hidden_size" : 1024,
+            "hidden_size_2" : 1024,
+            "num_classes" : 2,
+            "threshold" : 1.0,
+            "need_bias" : true,
+            "reset_value_residual" : false
+        }
+    },
+    
+    "loss" :{
+        "type" : "MSE_loss",
+        "weight" : [1.0, 1.0]
+    },
+
+    "metric" : [
+        "Loss", "Acc", "F1_micro", "F1_macro", "AUROC_macro", "AUROC_weighted", "AUPRC"
+    ],
+
+    "tensorboard": {
+        "active" : true,
+        "path" : "./tensorboard/"
+    }
+}

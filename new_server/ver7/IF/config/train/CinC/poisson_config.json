@@ -36,23 +36,22 @@
     "data_loader": {
         "type" : "CinC",
         "args" : {
-            "batch_size" : 256,
+            "batch_size" : 32,
             "num_workers" :8,
-            "train_path" :  "",
-            "test_path" : ""
+            "train_path" :  "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TRAIN.ts",
+            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TEST.ts"
         }
     
     },
 
     "model" : {
-        "type" : "TP",
+        "type" : "poisson",
         "args" : {
             "type_args" : {
-                "encoder_min" : 0.2,
-                "encoder_max" : 2.0
+                "timestep" : 128
             },
+            "input_size" : 24705,
             "hidden_size" : 1024,
-            "hidden_size_2" : 1024,
             "num_classes" : 2,
             "threshold" : 1.0,
             "need_bias" : true,
@@ -62,7 +61,7 @@
     
     "loss" :{
         "type" : "MSE_loss",
-        "weight" : [1.0, 4.0]
+        "weight" : [1.0, 1.0]
     },
 
     "metric" : [
