@@ -102,7 +102,7 @@ class trainer :
                                     shuffle=False)
 
             # TensorBoard 폴더 설정
-            writer = SummaryWriter(log_dir=f"./tensorboard/{args['model']['type']}" + "_" + args['data_loader']['type'] + "_" + 
+            writer = SummaryWriter(log_dir= args['tensorboard']['path'] + f"{args['model']['type']}" + "_" + args['data_loader']['type'] + "_" + 
                                    self.exec_time + f"_fold{fold + 1}")
 
             # 체크포인트 위치도 상세히 갱신

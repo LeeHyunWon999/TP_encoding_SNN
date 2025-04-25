@@ -28,7 +28,7 @@
 
             "checkpoint" : {
                 "active" : true,
-                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/2_size_128/"
             }
         }
     },
@@ -51,7 +51,7 @@
                 "timestep" : 128
             },
             "input_size" : 24705,
-            "hidden_size" : 1024,
+            "hidden_size" : 128,
             "num_classes" : 2,
             "threshold" : 1.0,
             "need_bias" : true,
@@ -70,6 +70,6 @@
 
     "tensorboard": {
         "active" : true,
-        "path" : "./tensorboard/"
+        "path" : "./tensorboard/2_size_128/"
     }
 }
