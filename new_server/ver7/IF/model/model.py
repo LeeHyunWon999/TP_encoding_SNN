@@ -163,7 +163,7 @@ class TP_2D(nn.Module):
 
         # 인코더 가중치 수동지정
         manual_weights = torch.linspace(encoder_min,encoder_max,steps=hidden_size).view(1,-1).to(device).transpose(1,0) # 0.2부터 2.0까지 인코더 뉴런 수만큼 지정
-        manual_weights = manual_weights.expand(-1, 61)  # shape 확장 필요 : (hidden_size, 61) 크기가 되도록 지정
+        manual_weights = manual_weights.expand(-1, input_channel)  # shape 확장 필요 : (hidden_size, 채널널) 크기가 되도록 지정
         self.encoder[0].weight = nn.Parameter(manual_weights) # 대입
         self.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
 
@@ -174,12 +174,12 @@ class TP_2D(nn.Module):
 
     def forward(self, x: torch.Tensor):
         results = 0. # for문이 모델 안에 있으므로 밖에다가는 이녀석을 내보내야 함
-        # print(x.shape) # (배치크기, 61, 405) 모양이 될 것
+        # print(x.shape) # (배치크기, 채널(61, 6 등), 시간축(405, 500 등등) 모양이 될 것
         
         timestep_size = x.shape[2] # 405 timestep을 만들어야 함
         # 근데 이제 이렇게 바꾼 데이터는 (배치, 출력크기) 만큼의 값을 갖고 있으니 여기서 나온 값들을 하나씩 잘라서 다음 레이어로 넘겨야 한다.
         for i in range(timestep_size) : 
-            x_slice = x[:,:,i] # 슬라이스 진행 후 256, 61 크기가 되도록 shape 수정(squeeze 등은 여기서 필요없음음)
+            x_slice = x[:,:,i] # 슬라이스 진행 후 256, 61 등의 크기가 되도록 shape 수정(squeeze 등은 여기서 필요없음)
             x_slice = self.encoder(x_slice)
             x_slice = self.hidden(x_slice)
             x_slice = self.layer(x_slice)

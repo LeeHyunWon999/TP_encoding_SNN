@@ -65,6 +65,8 @@ def get_data_loader_train(args) :
         return data_loader.CinC_Loader(ts_file_path=args['args']['train_path'])
     elif args['type'] == 'MIT-BIH' : 
         return data_loader.MITLoader_MLP_binary(csv_file=args['args']['train_path'])
+    elif args['type'] == 'CinC_original' : 
+        return data_loader.CinC_original_Loader(npy_dir=args['args']['train_path'], label_json_path=args['args']['train_label_path'])
     else : 
         raise TypeError("지원되지 않는 데이터로더 인자입니다.")
 
@@ -95,7 +97,7 @@ def get_scheduler(optimizer, args) :
 
 # 각 모델의 순전파 동작 (forward()에 합치는 경우 동일한 분류모델을 사용하는 poisson, burst 간의 구분이 forward() 안에서 이뤄져야 하므로 편의상 분리)
 # TP, filterCNN의 경우도 분리할 수 있으나.. 기존 코드가 인코더-모델 일체형이라 일단 보류
-def propagation(model, x, args) -> float : 
+def propagation(model, x, args, args_data_loader) -> float : 
     if args['type'] == 'poisson' : 
         encoder = encoding.PoissonEncoder() # 포아송 인코더
         out_fr = 0.
@@ -128,15 +130,29 @@ def propagation(model, x, args) -> float :
     elif args['type'] == 'filter_CNN' : 
         return model(x)
     elif args['type'] == 'TP_2D' : 
-        assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
-        x = x.view(-1, 61, 405)
-        return model(x)
+        if args_data_loader['type'] == 'CinC' : 
+            assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
+            x = x.view(-1, 61, 405)
+            return model(x)
+        elif args_data_loader['type'] == 'CinC_original' : 
+            assert x.shape[-1] == 3000, "Input feature size should be 6 x 500 = 3000"
+            x = x.view(-1, 6, 500)
+            return model(x)
+        else : 
+            raise TypeError("TP_2D 모델의 해당 데이터로더에 대한 데이터 후처리 방식이 지정되지 않았습니다.")
     elif args['type'] == 'filter_CNN_2D' : 
-        assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
-        x = x.view(-1, 61, 405)
-        return model(x)
+        if args_data_loader['type'] == 'CinC' : 
+            assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
+            x = x.view(-1, 61, 405)
+            return model(x)
+        elif args_data_loader['type'] == 'CinC_original' : 
+            assert x.shape[-1] == 3000, "Input feature size should be 6 x 500 = 3000"
+            x = x.view(-1, 6, 500)
+            return model(x)
+        else : 
+            raise TypeError("filter_CNN_2D 모델의 해당 데이터로더에 대한 데이터 후처리 방식이 지정되지 않았습니다.")
     else : 
-        raise TypeError("지원되지 않는 순전파 인자입니다.")
+        raise TypeError("지원되지 않는 순전파 인자입니다 : 모델명 불일치.")
     
 
 

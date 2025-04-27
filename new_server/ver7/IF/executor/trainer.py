@@ -137,7 +137,7 @@ class trainer :
                     label_onehot = F.one_hot(targets, args['model']['args']['num_classes']).float() # 원핫으로 MSE loss 쓸거임
 
                     # 순전파
-                    out_fr = util.propagation(model, data, args['model'])
+                    out_fr = util.propagation(model, data, args['model'], args['data_loader'])
 
                     
                     loss = util.get_loss(out_fr, label_onehot, args['loss'])
@@ -271,7 +271,7 @@ class trainer :
                 label_onehot = F.one_hot(y, args['model']['args']['num_classes']).float() # 원핫으로 MSE loss 쓸거임
                 
                 # 순전파
-                out_fr = util.propagation(model, x, args['model'])
+                out_fr = util.propagation(model, x, args['model'], args['data_loader'])
 
                 loss = util.get_loss(out_fr, label_onehot, args['loss'])
 

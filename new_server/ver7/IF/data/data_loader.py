@@ -1,8 +1,10 @@
+import os
 import torch
 from torch.utils.data import (DataLoader, Dataset)  # 미니배치 등의 데이터셋 관리를 도와주는 녀석
 from typing import Callable # 람다식
 import pandas as pd # MIT-BIH .csv 읽기용
 import numpy as np # CinC .ts 읽기용
+import json # CinC_original .json 읽기용
 
 # MIT-BIH Loader
 class MITLoader_MLP_binary(Dataset):
@@ -29,7 +31,7 @@ class MITLoader_MLP_binary(Dataset):
     
 
 
-# CinC Loader
+# CinC_simpled Loader
 class CinC_Loader(Dataset):
     def __init__(self, ts_file_path, normalize=True, transforms=lambda x: x):
         super().__init__()
@@ -72,3 +74,28 @@ class CinC_Loader(Dataset):
             x = self.transforms(x)
         y = self.labels[idx]
         return x.view(-1), y  # ← 기본은 flatten해서 반환
+
+
+# CinC_original Loader
+class CinC_original_Loader(Dataset):
+    def __init__(self, npy_dir, label_json_path):
+        self.npy_dir = npy_dir
+
+        # load label dictionary
+        with open(label_json_path, "r") as f:
+            self.label_dict = json.load(f)
+
+        self.file_ids = list(self.label_dict.keys())
+
+    def __len__(self):
+        return len(self.file_ids)
+
+    def __getitem__(self, idx):
+        file_id = self.file_ids[idx]
+        npy_path = os.path.join(self.npy_dir, file_id + ".npy")
+
+        data = np.load(npy_path)  # shape: [6, 500]
+        data_flat = data.flatten()  # shape: [3000]
+        label = self.label_dict[file_id]
+
+        return torch.tensor(data_flat, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
