@@ -80,7 +80,7 @@ class BURST(nn.Module):
 
 ############################################ TP 방식, 1D ############################################
 class TP(nn.Module):
-    def __init__(self, num_classes, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual, encoder_min, encoder_max, device):
+    def __init__(self, num_classes, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual, encoder_min, encoder_max, device, encoder_learnable):
         super().__init__()
         
         # SNN 인코더 : 채널 크기만큼 확장하기
@@ -111,9 +111,9 @@ class TP(nn.Module):
         self.encoder[0].weight = nn.Parameter(manual_weights) # 대입
         self.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
 
-        # 인코더 가중치는 학습에서 제외할 것!
+        # 인코더 가중치 학습여부는 TP냐 TP_learnable이냐 따라 다름!
         for param in self.encoder.parameters():
-            param.requires_grad = False
+            param.requires_grad = encoder_learnable
 
 
     def forward(self, x: torch.Tensor):
@@ -135,7 +135,7 @@ class TP(nn.Module):
 
     ############################################ TP 방식, 2D ############################################
 class TP_2D(nn.Module):
-    def __init__(self, num_classes, input_channel, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual, encoder_min, encoder_max, device):
+    def __init__(self, num_classes, input_channel, hidden_size, hidden_size_2, threshold_value, bias_option, reset_value_residual, encoder_min, encoder_max, device, encoder_learnable):
         super().__init__()
         
         # SNN 인코더 : 채널 크기만큼 확장하기
@@ -167,9 +167,9 @@ class TP_2D(nn.Module):
         self.encoder[0].weight = nn.Parameter(manual_weights) # 대입
         self.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
 
-        # 인코더 가중치는 학습에서 제외할 것!
+        # 인코더 가중치 학습여부는 TP냐 TP_learnable이냐 따라 다름!
         for param in self.encoder.parameters():
-            param.requires_grad = False
+            param.requires_grad = encoder_learnable
 
 
     def forward(self, x: torch.Tensor):

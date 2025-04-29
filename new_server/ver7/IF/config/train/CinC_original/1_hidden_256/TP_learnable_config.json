@@ -1,6 +1,6 @@
 {
     "device" : {
-        "gpu" : "0",
+        "gpu" : "1",
         "cuda" : "cuda"
     },
 
@@ -28,32 +28,35 @@
 
             "checkpoint" : {
                 "active" : true,
-                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/CinC_original/1_hidden_256/"
             }
         }
     },
     
     "data_loader": {
-        "type" : "MIT-BIH",
+        "type" : "CinC_original",
         "args" : {
             "batch_size" : 256,
             "num_workers" :8,
-            "train_path" :  "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
-            "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv"
+            "train_path" :  "/home/hschoi/data/leehyunwon/CinC_original_Heartbeat_audio_preprocessed_train",
+            "train_label_path" : "/home/hschoi/data/leehyunwon/CinC_original_Heartbeat_audio_preprocessed_train/label_dict.json",
+            "test_path" : "",
+            "test_label_path" : ""
         }
     
     },
 
     "model" : {
-        "type" : "TP",
+        "type" : "TP_learnable_2D",
         "args" : {
             "type_args" : {
                 "encoder_min" : 0.2,
                 "encoder_max" : 2.0,
-                "encoder_learnable" : false
+                "encoder_learnable" : true
             },
-            "hidden_size" : 1024,
-            "hidden_size_2" : 1024,
+            "input_channel" : 6,
+            "hidden_size" : 256,
+            "hidden_size_2" : 256,
             "num_classes" : 2,
             "threshold" : 1.0,
             "need_bias" : true,
@@ -63,7 +66,7 @@
     
     "loss" :{
         "type" : "MSE_loss",
-        "weight" : [1.0, 4.0]
+        "weight" : [1.0, 1.0]
     },
 
     "metric" : [
@@ -72,6 +75,6 @@
 
     "tensorboard": {
         "active" : true,
-        "path" : "./tensorboard/"
+        "path" : "/home/hschoi/leehyunwon/ECG-SNN/new_server/ver7/IF/tensorboard/CinC_original/1_hidden_256/"
     }
 }

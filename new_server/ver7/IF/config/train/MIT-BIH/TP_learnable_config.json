@@ -45,12 +45,12 @@
     },
 
     "model" : {
-        "type" : "TP",
+        "type" : "TP_learnable",
         "args" : {
             "type_args" : {
                 "encoder_min" : 0.2,
                 "encoder_max" : 2.0,
-                "encoder_learnable" : false
+                "encoder_learnable" : true
             },
             "hidden_size" : 1024,
             "hidden_size_2" : 1024,

@@ -49,7 +49,8 @@
         "args" : {
             "type_args" : {
                 "encoder_min" : 0.2,
-                "encoder_max" : 2.0
+                "encoder_max" : 2.0,
+                "encoder_learnable" : false
             },
             "input_channel" : 61,
             "hidden_size" : 128,

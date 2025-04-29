@@ -33,24 +33,26 @@ def get_model(args, device) :
                              hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
                              threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
                              reset_value_residual=args['args']['reset_value_residual'])
-    elif args['type'] == 'TP' : 
+    elif args['type'] == 'TP' or args['type'] == 'TP_learnable': # 러너블은 파라미터 하나만 다르고 모델은 동일함 (텐서보드에 찍고 구분하려고 나눔)
         return model.TP(num_classes = args['args']['num_classes'], 
                         hidden_size=args['args']['hidden_size'], hidden_size_2=args['args']['hidden_size_2'], 
                         threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
                         reset_value_residual=args['args']['reset_value_residual'], 
-                        encoder_min = args['args']['type_args']['encoder_min'], encoder_max = args['args']['type_args']['encoder_max'], device = device)
+                        encoder_min = args['args']['type_args']['encoder_min'], encoder_max = args['args']['type_args']['encoder_max'], 
+                        device = device, encoder_learnable=args['args']['type_args']['encoder_learnable'])
     elif args['type'] == 'filter_CNN' : 
         return model.filter_CNN(num_classes = args['args']['num_classes'], hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
                                 out_channels=args['args']['type_args']['channel'], kernel_size=args['args']['type_args']['window'], 
                                 stride=args['args']['type_args']['stride'], padding=args['args']['type_args']['padding'], 
                                 threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
                                 reset_value_residual=args['args']['reset_value_residual'])
-    elif args['type'] == 'TP_2D' : 
+    elif args['type'] == 'TP_2D' or args['type'] == 'TP_learnable_2D' : # 러너블은 파라미터 하나만 다르고 모델은 동일함
         return model.TP_2D(num_classes = args['args']['num_classes'], input_channel=args['args']['input_channel'],
                         hidden_size=args['args']['hidden_size'], hidden_size_2=args['args']['hidden_size_2'], 
                         threshold_value=args['args']['threshold'], bias_option=args['args']['need_bias'], 
                         reset_value_residual=args['args']['reset_value_residual'], 
-                        encoder_min = args['args']['type_args']['encoder_min'], encoder_max = args['args']['type_args']['encoder_max'], device = device)
+                        encoder_min = args['args']['type_args']['encoder_min'], encoder_max = args['args']['type_args']['encoder_max'], 
+                        device = device, encoder_learnable=args['args']['type_args']['encoder_learnable'])
     elif args['type'] == 'filter_CNN_2D' : 
         return model.filter_CNN_2D(num_classes = args['args']['num_classes'],  input_channel=args['args']['input_channel'], hidden_size=args['args']['hidden_size'], hidden_size_2=None, 
                                 out_channels=args['args']['type_args']['channel'], kernel_size=args['args']['type_args']['window'], 
@@ -125,11 +127,11 @@ def propagation(model, x, args, args_data_loader) -> float :
         out_fr /= timestep
         return out_fr
 
-    elif args['type'] == 'TP' : 
+    elif args['type'] == 'TP' or args['type'] == 'TP_learnable':  # 러너블은 파라미터 하나만 다르고 모델은 동일함
         return model(x)
     elif args['type'] == 'filter_CNN' : 
         return model(x)
-    elif args['type'] == 'TP_2D' : 
+    elif args['type'] == 'TP_2D' or args['type'] == 'TP_learnable_2D': 
         if args_data_loader['type'] == 'CinC' : 
             assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"
             x = x.view(-1, 61, 405)
@@ -139,7 +141,7 @@ def propagation(model, x, args, args_data_loader) -> float :
             x = x.view(-1, 6, 500)
             return model(x)
         else : 
-            raise TypeError("TP_2D 모델의 해당 데이터로더에 대한 데이터 후처리 방식이 지정되지 않았습니다.")
+            raise TypeError("TP_2D(혹은 러너블) 모델의 해당 데이터로더에 대한 데이터 후처리 방식이 지정되지 않았습니다.")
     elif args['type'] == 'filter_CNN_2D' : 
         if args_data_loader['type'] == 'CinC' : 
             assert x.shape[-1] == 24705, "Input feature size should be 61 x 405 = 24705"

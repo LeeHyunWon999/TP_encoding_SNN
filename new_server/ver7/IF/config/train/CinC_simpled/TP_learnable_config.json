@@ -1,6 +1,6 @@
 {
     "device" : {
-        "gpu" : "0",
+        "gpu" : "1",
         "cuda" : "cuda"
     },
 
@@ -28,32 +28,33 @@
 
             "checkpoint" : {
                 "active" : true,
-                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/"
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/2_size_128/"
             }
         }
     },
     
     "data_loader": {
-        "type" : "MIT-BIH",
+        "type" : "CinC",
         "args" : {
-            "batch_size" : 256,
+            "batch_size" : 32,
             "num_workers" :8,
-            "train_path" :  "/home/hschoi/data/MIT-BIH/mitbih_train.csv",
-            "test_path" : "/home/hschoi/data/MIT-BIH/mitbih_test.csv"
+            "train_path" :  "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TRAIN.ts",
+            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TEST.ts"
         }
     
     },
 
     "model" : {
-        "type" : "TP",
+        "type" : "TP_learnable_2D",
         "args" : {
             "type_args" : {
                 "encoder_min" : 0.2,
                 "encoder_max" : 2.0,
-                "encoder_learnable" : false
+                "encoder_learnable" : true
             },
-            "hidden_size" : 1024,
-            "hidden_size_2" : 1024,
+            "input_channel" : 61,
+            "hidden_size" : 128,
+            "hidden_size_2" : 128,
             "num_classes" : 2,
             "threshold" : 1.0,
             "need_bias" : true,
@@ -63,7 +64,7 @@
     
     "loss" :{
         "type" : "MSE_loss",
-        "weight" : [1.0, 4.0]
+        "weight" : [1.0, 1.0]
     },
 
     "metric" : [
@@ -72,6 +73,6 @@
 
     "tensorboard": {
         "active" : true,
-        "path" : "./tensorboard/"
+        "path" : "./tensorboard/2_size_128/"
     }
 }
