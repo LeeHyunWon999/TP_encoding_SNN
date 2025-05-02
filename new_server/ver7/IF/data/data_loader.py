@@ -99,3 +99,41 @@ class CinC_original_Loader(Dataset):
         label = self.label_dict[file_id]
 
         return torch.tensor(data_flat, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
+
+
+# gesture Loader
+class Gesture_Loader(Dataset):
+    def __init__(self, ts_file_path):
+        self.data = []
+        self.labels = []
+
+        with open(ts_file_path, 'r') as f:
+            lines = f.readlines()
+
+        # 데이터 라인 추출
+        data_start_idx = next(i for i, line in enumerate(lines) if line.strip().lower() == "@data") + 1
+        data_lines = [line.strip() for line in lines[data_start_idx:] if line.strip()]
+
+        for line in data_lines:
+            if ':' in line:
+                signal_str, label_str = line.rsplit(':', 1)
+                signal = np.array([float(x) for x in signal_str.split(',')], dtype=np.float32)
+
+                # 0~1 정규화 (각 데이터포인트 기준)
+                min_val, max_val = np.min(signal), np.max(signal)
+                if max_val - min_val > 0:
+                    signal = (signal - min_val) / (max_val - min_val)
+                else:
+                    signal = np.zeros_like(signal)  # 상수 시계열 처리
+
+                self.data.append(signal)
+                self.labels.append(int(label_str.strip()) - 1)  # 1~8 → 0~7
+
+        self.data = [torch.tensor(d) for d in self.data]
+        self.labels = torch.tensor(self.labels)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]

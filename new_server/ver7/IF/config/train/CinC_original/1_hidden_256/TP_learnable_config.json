@@ -41,7 +41,8 @@
             "train_path" :  "/home/hschoi/data/leehyunwon/CinC_original_Heartbeat_audio_preprocessed_train",
             "train_label_path" : "/home/hschoi/data/leehyunwon/CinC_original_Heartbeat_audio_preprocessed_train/label_dict.json",
             "test_path" : "",
-            "test_label_path" : ""
+            "test_label_path" : "",
+            "dim" : [6,500]
         }
     
     },

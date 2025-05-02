@@ -39,7 +39,8 @@
             "batch_size" : 32,
             "num_workers" :8,
             "train_path" :  "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TRAIN.ts",
-            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TEST.ts"
+            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Heartbeat/Heartbeat_TEST.ts",
+            "dim" : [61,405]
         }
     
     },

@@ -1,6 +1,6 @@
 {
     "device" : {
-        "gpu" : "3",
+        "gpu" : "0",
         "cuda" : "cuda"
     },
 
@@ -28,37 +28,32 @@
 
             "checkpoint" : {
                 "active" : true,
-                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/CinC_original/2_weight_on/"
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/gesture/1_basic/"
             }
         }
     },
     
     "data_loader": {
-        "type" : "CinC_original",
+        "type" : "gesture",
         "args" : {
             "batch_size" : 256,
             "num_workers" :8,
-            "train_path" :  "/home/hschoi/data/leehyunwon/CinC_original_Heartbeat_audio_preprocessed_train",
-            "train_label_path" : "/home/hschoi/data/leehyunwon/CinC_original_Heartbeat_audio_preprocessed_train/label_dict.json",
-            "test_path" : "",
-            "test_label_path" : "",
-            "dim" : [6,500]
+            "train_path" :  "/home/hschoi/data/leehyunwon/time_series_Gesture/UWaveGestureLibraryAll_TRAIN.ts",
+            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Gesture/UWaveGestureLibraryAll_TEST.ts",
+            "dim" : [3,315]
         }
     
     },
-    
+
     "model" : {
-        "type" : "filter_CNN_2D",
+        "type" : "poisson",
         "args" : {
             "type_args" : {
-                "window" : 32,
-                "stride" : 16,
-                "padding" : 0,
-                "channel" : 256
+                "timestep" : 128
             },
-            "input_channel" : 6,
-            "hidden_size" : 256,
-            "num_classes" : 2,
+            "input_size" : 945,
+            "hidden_size" : 1024,
+            "num_classes" : 8,
             "threshold" : 1.0,
             "need_bias" : true,
             "reset_value_residual" : false
@@ -67,11 +62,11 @@
     
     "loss" :{
         "type" : "MSE_loss",
-        "weight" : [1.0, 4.0]
+        "weight" : [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     },
 
     "tensorboard": {
         "active" : true,
-        "path" : "/home/hschoi/leehyunwon/ECG-SNN/new_server/ver7/IF/tensorboard/CinC_original/2_weight_on/"
+        "path" : "/home/hschoi/leehyunwon/ECG-SNN/new_server/ver7/IF/tensorboard/gesture/1_basic/"
     }
 }
