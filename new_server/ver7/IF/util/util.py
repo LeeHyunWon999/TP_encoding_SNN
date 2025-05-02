@@ -136,9 +136,9 @@ def propagation(model, x, args, args_data_loader) -> float :
         return model(x)
     
     elif args['type'] == 'TP_2D' or args['type'] == 'TP_learnable_2D' or args['type'] == 'filter_CNN_2D' : # 얘넨 한가족임, 2차원 변형 후 보내면 됨됨
-        total_length = args['args']['dim'][0] * args['args']['dim'][1]
-        assert x.shape[-1] == total_length, f"Input feature size should be {args['args']['dim'][0]} x {args['args']['dim'][1]} = {total_length}"
-        x = x.view(-1, args['args']['dim'][0], args['args']['dim'][1])
+        total_length = args_data_loader['args']['dim'][0] * args_data_loader['args']['dim'][1]
+        assert x.shape[-1] == total_length, f"Input feature size should be {args_data_loader['args']['dim'][0]} x {args_data_loader['args']['dim'][1]} = {total_length}"
+        x = x.view(-1, args_data_loader['args']['dim'][0], args_data_loader['args']['dim'][1])
         return model(x)
     
     else : 

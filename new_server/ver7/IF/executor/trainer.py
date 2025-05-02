@@ -153,12 +153,12 @@ class trainer :
 
                     # 지표 계산
                     preds = torch.argmax(out_fr, dim=1)
+                    probabilities = F.softmax(out_fr, dim=1)
                     self.accuracy.update(preds, targets)
                     self.f1_micro.update(preds, targets)
                     self.f1_weighted.update(preds, targets)
-                    self.auroc_macro.update(preds, targets)
-                    self.auroc_weighted.update(preds, targets)
-                    probabilities = F.softmax(out_fr, dim=1)
+                    self.auroc_macro.update(probabilities, targets)
+                    self.auroc_weighted.update(probabilities, targets)
                     self.auprc.update(probabilities, targets)
 
                     functional.reset_net(model)
@@ -283,13 +283,14 @@ class trainer :
 
                 # 여기도 메트릭 update해야 compute 가능함
                 # 여기도 마찬가지로 크로스엔트로피 드가는거 생각해서 1차원으로 변경 필요함
+                # 지표 계산
                 preds = torch.argmax(out_fr, dim=1)
+                probabilities = F.softmax(out_fr, dim=1)
                 self.accuracy.update(preds, y)
                 self.f1_micro.update(preds, y)
                 self.f1_weighted.update(preds, y)
-                self.auroc_macro.update(preds, y)
-                self.auroc_weighted.update(preds, y)
-                probabilities = F.softmax(out_fr, dim=1)[:, 1]  # 클래스 "1"의 확률 추출
+                self.auroc_macro.update(probabilities, y)
+                self.auroc_weighted.update(probabilities, y)
                 self.auprc.update(probabilities, y)
                 
                 # 얘도 SNN 모델이니 초기화 필요
