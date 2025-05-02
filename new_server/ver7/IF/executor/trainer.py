@@ -51,12 +51,12 @@ class trainer :
         self.exec_time = time.strftime('%Y-%m-%d-%H-%M-%S')
 
         # 텐서보드에 찍을 메트릭 여기서 정의
-        self.f1_micro = torchmetrics.F1Score(num_classes=2, average='micro', task='binary').to(self.device)
-        self.f1_weighted = torchmetrics.F1Score(num_classes=2, average='weighted', task='binary').to(self.device)
-        self.auroc_macro = torchmetrics.AUROC(num_classes=2, average='macro', task='binary').to(self.device)
-        self.auroc_weighted = torchmetrics.AUROC(num_classes=2, average='weighted', task='binary').to(self.device)
-        self.auprc = torchmetrics.AveragePrecision(num_classes=2, task='binary').to(self.device)
-        self.accuracy = torchmetrics.Accuracy(threshold=0.5, task='binary').to(self.device)
+        self.f1_micro = torchmetrics.F1Score(num_classes=args['model']['args']['num_classes'], average='micro', task="multiclass").to(self.device)
+        self.f1_weighted = torchmetrics.F1Score(num_classes=args['model']['args']['num_classes'], average='weighted', task="multiclass").to(self.device)
+        self.auroc_macro = torchmetrics.AUROC(num_classes=args['model']['args']['num_classes'], average='macro', task="multiclass").to(self.device)
+        self.auroc_weighted = torchmetrics.AUROC(num_classes=args['model']['args']['num_classes'], average='weighted', task="multiclass").to(self.device)
+        self.auprc = torchmetrics.AveragePrecision(num_classes=args['model']['args']['num_classes'], task="multiclass").to(self.device)
+        self.accuracy = torchmetrics.Accuracy(num_classes=args['model']['args']['num_classes'], task="multiclass").to(self.device)
 
         # 참고 : 이것 외에도 에포크, Loss까지 찍어야 하니 참고할 것!
         self.earlystop_counter = args['executor']['args']['early_stop_epoch']
@@ -158,7 +158,7 @@ class trainer :
                     self.f1_weighted.update(preds, targets)
                     self.auroc_macro.update(preds, targets)
                     self.auroc_weighted.update(preds, targets)
-                    probabilities = F.softmax(out_fr, dim=1)[:, 1]
+                    probabilities = F.softmax(out_fr, dim=1)
                     self.auprc.update(probabilities, targets)
 
                     functional.reset_net(model)

@@ -1,6 +1,6 @@
 {
     "device" : {
-        "gpu" : "0",
+        "gpu" : "1",
         "cuda" : "cuda"
     },
 
