@@ -1,0 +1,72 @@
+{
+    "device" : {
+        "gpu" : "0",
+        "cuda" : "cuda"
+    },
+
+    "executor" : {
+        "type" : "trainer",
+        "args" : {
+            "random_seed" : 999,
+            "k_folds" : 5,
+            "num_epochs" : 1000,
+            "early_stop_enable" : false,
+            "early_stop_epoch" : 25,
+            
+            "optimizer" : {
+                "type" : "Adam",
+                "lr" : 0.001
+            },
+
+            "scheduler" : {
+                "type" : "CosineAnnealingLR",
+                "args" : {
+                    "T_max" : 5,
+                    "eta_min" : 0.00001
+                }
+            },
+
+            "checkpoint" : {
+                "active" : true,
+                "path" : "/home/hschoi/data/leehyunwon/ECG-SNN/ver7/gesture/2_hidden_128/"
+            }
+        }
+    },
+    
+    "data_loader": {
+        "type" : "gesture",
+        "args" : {
+            "batch_size" : 256,
+            "num_workers" :8,
+            "train_path" :  "/home/hschoi/data/leehyunwon/time_series_Gesture/UWaveGestureLibraryAll_TRAIN.ts",
+            "test_path" : "/home/hschoi/data/leehyunwon/time_series_Gesture/UWaveGestureLibraryAll_TEST.ts",
+            "dim" : [3,315]
+        }
+    
+    },
+
+    "model" : {
+        "type" : "poisson",
+        "args" : {
+            "type_args" : {
+                "timestep" : 128
+            },
+            "input_size" : 945,
+            "hidden_size" : 128,
+            "num_classes" : 8,
+            "threshold" : 1.0,
+            "need_bias" : true,
+            "reset_value_residual" : false
+        }
+    },
+    
+    "loss" :{
+        "type" : "MSE_loss",
+        "weight" : [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    },
+
+    "tensorboard": {
+        "active" : true,
+        "path" : "/home/hschoi/leehyunwon/ECG-SNN/new_server/ver7/IF/tensorboard/gesture/2_hidden_128/"
+    }
+}
