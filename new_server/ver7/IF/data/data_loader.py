@@ -137,3 +137,126 @@ class Gesture_Loader(Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx]
+    
+
+# fordA Loader
+class FordA_Loader(Dataset):
+    def __init__(self, ts_file_path):
+        self.data = []
+        self.labels = []
+
+        with open(ts_file_path, 'r') as f:
+            lines = f.readlines()
+
+        # @data 이후부터 유효 데이터 라인
+        data_start_idx = next(i for i, line in enumerate(lines) if line.strip().lower() == "@data") + 1
+        data_lines = [line.strip() for line in lines[data_start_idx:] if line.strip()]
+
+        for line in data_lines:
+            if ':' in line:
+                signal_str, label_str = line.rsplit(':', 1)
+                signal = np.array([float(x) for x in signal_str.split(',')], dtype=np.float32)
+
+                # 0~1로 정규화 (데이터포인트 단위)
+                min_val, max_val = np.min(signal), np.max(signal)
+                if max_val - min_val > 0:
+                    signal = (signal - min_val) / (max_val - min_val)
+                else:
+                    signal = np.zeros_like(signal)
+
+                # 라벨 정규화: -1 → 0, 1 → 1
+                label = 0 if int(label_str.strip()) == -1 else 1
+
+                self.data.append(torch.tensor(signal))
+                self.labels.append(label)
+
+        self.labels = torch.tensor(self.labels, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]
+
+# faultD Loader
+class FaultD_Loader(Dataset):
+    def __init__(self, ts_file_path):
+        self.data = []
+        self.labels = []
+
+        with open(ts_file_path, 'r') as f:
+            lines = f.readlines()
+
+        # @data 이후부터 유효한 데이터
+        data_start_idx = next(i for i, line in enumerate(lines) if line.strip().lower() == "@data") + 1
+        data_lines = [line.strip() for line in lines[data_start_idx:] if line.strip()]
+
+        for line in data_lines:
+            if ':' not in line:
+                continue
+
+            signal_str, label_str = line.rsplit(':', 1)
+            signal = np.array([float(x) for x in signal_str.split(',')], dtype=np.float32)
+
+            # 0~1 정규화 (데이터포인트 단위)
+            min_val, max_val = np.min(signal), np.max(signal)
+            if max_val - min_val > 0:
+                signal = (signal - min_val) / (max_val - min_val)
+            else:
+                signal = np.zeros_like(signal)
+
+            label = int(label_str.strip())
+
+            self.data.append(torch.tensor(signal))  # shape: [5120]
+            self.labels.append(label)               # int: 0, 1, 2
+
+        self.labels = torch.tensor(self.labels, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]
+
+# fruitfly Loader
+class FruitFly_Loader(Dataset):
+    def __init__(self, ts_file_path):
+        self.data = []
+        self.labels = []
+
+        with open(ts_file_path, 'r') as f:
+            lines = f.readlines()
+
+        # @data 이후 유효 데이터 시작
+        data_start_idx = next(i for i, line in enumerate(lines) if line.strip().lower() == "@data") + 1
+        data_lines = [line.strip() for line in lines[data_start_idx:] if line.strip()]
+
+        for line in data_lines:
+            if ':' not in line:
+                continue
+
+            signal_str, label_str = line.rsplit(':', 1)
+            signal = np.array([float(x) for x in signal_str.split(',')], dtype=np.float32)
+
+            # percentile 기반 정규화
+            lower = np.percentile(signal, 1)
+            upper = np.percentile(signal, 99)
+
+            signal = np.clip(signal, lower, upper)
+            if upper - lower > 0:
+                signal = (signal - lower) / (upper - lower)
+            else:
+                signal = np.zeros_like(signal)
+
+            label = int(label_str.strip())
+
+            self.data.append(torch.tensor(signal))  # shape: [5000]
+            self.labels.append(label)
+
+        self.labels = torch.tensor(self.labels, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]

@@ -163,7 +163,7 @@ class TP_2D(nn.Module):
 
         # 인코더 가중치 수동지정
         manual_weights = torch.linspace(encoder_min,encoder_max,steps=hidden_size).view(1,-1).to(device).transpose(1,0) # 0.2부터 2.0까지 인코더 뉴런 수만큼 지정
-        manual_weights = manual_weights.expand(-1, input_channel).clone()  # shape 확장 필요 : (hidden_size, 채널널) 크기가 되도록 지정
+        manual_weights = manual_weights.expand(-1, input_channel).clone()  # shape 확장 필요 : (hidden_size, 채널) 크기가 되도록 지정
         self.encoder[0].weight = nn.Parameter(manual_weights) # 대입
         self.encoder[0].bias.data.fill_(0.0) # bias도 0으로 초기화
 

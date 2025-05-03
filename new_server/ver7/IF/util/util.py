@@ -71,6 +71,12 @@ def get_data_loader_train(args) :
         return data_loader.CinC_original_Loader(npy_dir=args['args']['train_path'], label_json_path=args['args']['train_label_path'])
     elif args['type'] == 'gesture' : 
         return data_loader.Gesture_Loader(ts_file_path=args['args']['train_path'])
+    elif args['type'] == 'fordA' : 
+        return data_loader.FordA_Loader(ts_file_path=args['args']['train_path'])
+    elif args['type'] == 'faultD' : 
+        return data_loader.FaultD_Loader(ts_file_path=args['args']['train_path'])
+    elif args['type'] == 'fruitfly' : 
+        return data_loader.FruitFly_Loader(ts_file_path=args['args']['train_path'])
     else : 
         raise TypeError("지원되지 않는 데이터로더 인자입니다.")
 
@@ -135,7 +141,7 @@ def propagation(model, x, args, args_data_loader) -> float :
     elif args['type'] == 'filter_CNN' : 
         return model(x)
     
-    elif args['type'] == 'TP_2D' or args['type'] == 'TP_learnable_2D' or args['type'] == 'filter_CNN_2D' : # 얘넨 한가족임, 2차원 변형 후 보내면 됨됨
+    elif args['type'] == 'TP_2D' or args['type'] == 'TP_learnable_2D' or args['type'] == 'filter_CNN_2D' : # 얘넨 한가족임, 2차원 변형 후 보내면 됨
         total_length = args_data_loader['args']['dim'][0] * args_data_loader['args']['dim'][1]
         assert x.shape[-1] == total_length, f"Input feature size should be {args_data_loader['args']['dim'][0]} x {args_data_loader['args']['dim'][1]} = {total_length}"
         x = x.view(-1, args_data_loader['args']['dim'][0], args_data_loader['args']['dim'][1])
