@@ -86,6 +86,16 @@ def get_data_loader_test(args) :
         return data_loader.CinC_Loader(ts_file_path=args['args']['test_path'])
     elif args['type'] == 'MIT-BIH' : 
         return data_loader.MITLoader_MLP_binary(csv_file=args['args']['test_path'])
+    elif args['type'] == 'CinC_original' : 
+        return data_loader.CinC_original_Loader(npy_dir=args['args']['test_path'], label_json_path=args['args']['test_label_path'])
+    elif args['type'] == 'gesture' : 
+        return data_loader.Gesture_Loader(ts_file_path=args['args']['test_path'])
+    elif args['type'] == 'fordA' : 
+        return data_loader.FordA_Loader(ts_file_path=args['args']['test_path'])
+    elif args['type'] == 'faultD' : 
+        return data_loader.FaultD_Loader(ts_file_path=args['args']['test_path'])
+    elif args['type'] == 'fruitfly' : 
+        return data_loader.FruitFly_Loader(ts_file_path=args['args']['test_path'])
     else : 
         raise TypeError("지원되지 않는 데이터로더 인자입니다.")
 

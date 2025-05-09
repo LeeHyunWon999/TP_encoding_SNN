@@ -47,8 +47,8 @@ class tester :
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
 
-        # 파일 실행 기준 시간 변수 생성
-        self.exec_time = time.strftime('%Y-%m-%d-%H-%M-%S')
+        # 파일 실행 기준 시간 변수 생성 (아마 안 쓸 것)
+        # self.exec_time = time.strftime('%Y-%m-%d-%H-%M-%S')
 
         # 텐서보드에 찍을 메트릭 여기서 정의
         self.f1_micro = torchmetrics.F1Score(num_classes=args['model']['args']['num_classes'], average='micro', task="multiclass").to(self.device)
@@ -66,5 +66,29 @@ class tester :
         # 가중치 비율 텐서로 옮기기
         self.class_weight = torch.tensor(args['loss']['weight'], device=self.device)
     
-    def test() : 
-        pass
+
+    # 테스트 진행 : fold만큼 반복, 모델에 가중치 넣고 돌리는 작업 수행
+    def test(self) : 
+        args = self.args
+        
+        # 데이터셋 로더 선정 (모델은 체크포인트를 위해 각 fold 안에서 선언하는 편이 나을 듯..?)
+        test_dataset = util.get_data_loader_test(args['data_loader'])
+        test_loader = DataLoader(test_dataset, batch_size=args['data_loader']['args']['batch_size'], 
+                                      num_workers=args['data_loader']['args']['num_workers'],
+                                      shuffle=True, drop_last=True)
+        
+        # exec_time_test : test용 exec_time, 기존의 시간 값으로부터 추출출
+        exec_time_test = args['executor']['args']['checkpoint']['path'].split("_")[-3]
+
+        # fold만큼 반복
+        for i in args['executor']['args']['k_folds'] : 
+            # tensorboard writer 설정
+            writer = SummaryWriter(log_dir= args['tensorboard']['path'] + f"{args['model']['type']}" + "_" + args['data_loader']['type'] + "_" + 
+                                   exec_time_test + f"_test{i + 1}")
+            
+            # model 로드
+            model = ???
+            checkpoint = torch.load(saved_model_dir)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            model.to(device)
+            model.eval()
