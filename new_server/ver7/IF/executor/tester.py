@@ -86,9 +86,9 @@ class tester :
             writer = SummaryWriter(log_dir= args['tensorboard']['path'] + f"{args['model']['type']}" + "_" + args['data_loader']['type'] + "_" + 
                                    exec_time_test + f"_test{i + 1}")
             
-            # model 로드
-            model = ???
-            checkpoint = torch.load(saved_model_dir)
-            model.load_state_dict(checkpoint["model_state_dict"])
-            model.to(device)
-            model.eval()
+            # model 로드 (작업중...)
+            # model = ???
+            # checkpoint = torch.load(saved_model_dir)
+            # model.load_state_dict(checkpoint["model_state_dict"])
+            # model.to(device)
+            # model.eval()
